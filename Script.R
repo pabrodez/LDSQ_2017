@@ -1,9 +1,26 @@
-# Create folder and download data
+# 31/3/18. To do list:
+# 1. generate histograms
+# 2. generate mosaics (?)
+# 3. Create a adults_dates and achild_dates dataframes grouped by count
+# 4. Geocode area of residence
+# 5. Map data
+# Ages (numerical) boxplot
+# LDSQ (numerical) scores boxplot
+# Run a regex to check invalid strings and substitute them for NA
+
+
+# Create folders and download data ----------------------------------------
+
+
 if (!dir.exists("./data")) dir.create("./data")
-url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/ANON_EDashboard_Jun-Nov2017.xlsx?raw=true"
+if (!dir.exists("./plots")) dir.create("./plots")
+url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/data_raw.xlsx?raw=true"
 download.file(url, destfile = "./data/data_raw.xlsx", mode = "wb")
 
-# Load packages
+
+
+# load packages -----------------------------------------------------------
+
 library(xlsx)
 library(tidyverse)
 library(lubridate)
@@ -13,6 +30,13 @@ library(makeR)
 library(chron)
 library(lattice)
 library(grid)
+library(gridExtra)
+library(ggthemes)
+library(psych)
+library(vcd)
+library(cowplot)
+
+
 # 1. Read data -----------------------------------------------------------
 list.files("./data", pattern = ".xlsx")
 adults_raw <-  read.xlsx("./data/data_raw.xlsx", sheetIndex = 1, startRow = 2, header = TRUE, 
@@ -64,6 +88,7 @@ adults_raw$LDSQ.. <- as.numeric(adults_raw$LDSQ..)
 
 child_raw$Age <- as.numeric(child_raw$Age)
 child_raw$CAIDSQ.. <- as.numeric(child_raw$CAIDSQ..)
+
 
 
 
@@ -207,6 +232,21 @@ unique(child_raw$Chain.of.custody.correct)
 child_raw$Chain.of.custody.correct[child_raw$Chain.of.custody.correct == "not correct"] <- "no"
 unique(child_raw$CAIDSQ..)
 
+# NAs plot
+plotNa <- function(dataFrame, title = NULL) {
+        tempDf <- as.data.frame(ifelse(is.na(dataFrame), 0, 1))
+        tempDf <- tempDf[, order(colSums(tempDf))]
+        tempData <- expand.grid(list(x = 1:nrow(tempDf), y = colnames(tempDf)))
+        tempData$v <- as.vector(as.matrix(tempDf))
+        tempData <- data.frame(x = unlist(tempData$x), y = unlist(tempData$y), v = unlist(tempData$v))
+        ggplot(tempData) + geom_tile(aes(x=x, y=y, fill=factor(v))) +
+                scale_fill_manual(values=c("white", "black"), name="Missing value\n1=No, 0=Yes") +
+                theme_light() + ylab("") + xlab("Rows of data set") + ggtitle(title)
+        
+}
+
+plotNa(adults_raw)
+plotNa(child_raw)
 
 
 # 3. Group variables and create new ones------------------------------------------------------
@@ -215,225 +255,336 @@ child_dates <- ymd(child_raw$Date.attended)
 adults_dates <- ymd(adults_raw$Date.attended)
 dates_all<- c(child_dates, adults_dates)
 dates_all <- tibble(Date = dates_all)
-
 dates_all <- dates_all %>% group_by(Date) %>% summarise(date_count = n())
 
-dates_all %>% mutate(month = month(Date)) %>% 
-        group_by(month) %>% summarise(month_count = n()) %>% 
-        ggplot(.) + aes(x = month, y = month_count) + geom_line()  # 1st look
+adult_date_tib <- tibble(Date = ymd(adults_raw$Date.attended))
+adult_date_tib <- adult_date_tib %>% group_by(Date) %>% summarise(date_count = n())
 
-# calendar heat: https://github.com/jbryer/makeR/blob/master/R/calendarHeat.R -----------------------------------------------------------
+# ldsq yes/no
+adults_raw <- mutate(adults_raw, LD_diag = ifelse(LDSQ.. < 46, "yes", "no"))
 
-calendario <- function(dates, 
-                         values, 
-                         ncolors=99, 
-                         color="r2g", 
-                         varname="Values",
-                         date.form = "%Y-%m-%d", ...) {
-        require(lattice)
-        require(grid)
-        require(chron)
-        if (class(dates) == "character" | class(dates) == "factor" ) {
-                dates <- strptime(dates, date.form)
-        }
-        caldat <- data.frame(value = values, dates = dates)
-        min.date <- as.Date(paste(format(min(dates), "%Y"),
-                                  "-1-1",sep = ""))
-        max.date <- as.Date(paste(format(max(dates), "%Y"),
-                                  "-12-31", sep = ""))
-        dates.f <- data.frame(date.seq = seq(min.date, max.date, by="days"))
-        
-        # Merge moves data by one day, avoid
-        caldat <- data.frame(date.seq = seq(min.date, max.date, by="days"), value = NA)
-        dates <- as.Date(dates) 
-        caldat$value[match(dates, caldat$date.seq)] <- values
-        
-        caldat$dotw <- as.numeric(format(caldat$date.seq, "%w"))
-        caldat$woty <- as.numeric(format(caldat$date.seq, "%U")) + 1
-        caldat$yr <- as.factor(format(caldat$date.seq, "%Y"))
-        caldat$month <- as.numeric(format(caldat$date.seq, "%m"))
-        yrs <- as.character(unique(caldat$yr))
-        d.loc <- as.numeric()                        
-        for (m in min(yrs):max(yrs)) {
-                d.subset <- which(caldat$yr == m)  
-                sub.seq <- seq(1,length(d.subset))
-                d.loc <- c(d.loc, sub.seq)
-        }  
-        caldat <- cbind(caldat, seq=d.loc)
-        
-        #color styles
-        r2b <- c("#0571B0", "#92C5DE", "#F7F7F7", "#F4A582", "#CA0020") #red to blue                                                                               
-        r2g <- c("#D61818", "#FFAE63", "#FFFFBD", "#B5E384")   #red to green
-        w2b <- c("#045A8D", "#2B8CBE", "#74A9CF", "#BDC9E1", "#F1EEF6")   #white to blue
-        
-        assign("col.sty", get(color))
-        calendar.pal <- colorRampPalette((col.sty), space = "Lab")
-        def.theme <- lattice.getOption("default.theme")
-        cal.theme <-
-                function() {  
-                        theme <-
-                                list(
-                                        strip.background = list(col = "transparent"),
-                                        strip.border = list(col = "transparent"),
-                                        axis.line = list(col="transparent"),
-                                        par.strip.text=list(cex=0.8))
-                }
-        lattice.options(default.theme = cal.theme)
-        yrs <- (unique(caldat$yr))
-        nyr <- length(yrs)
-        print(cal.plot <- levelplot(value~woty*dotw | yr, data=caldat,
-                                    as.table=TRUE,
-                                    aspect=.12,
-                                    layout = c(1, nyr),
-                                    between = list(x=0, y=c(0.5, 0.5)),
-                                    strip=TRUE,
-                                    main = paste("Calendar Heat Map of ", varname, sep = ""),
-                                    scales = list(
-                                            x = list(
-                                                    at= c(seq(2.9, 52, by=4.42)),
-                                                    labels = month.abb,
-                                                    alternating = c(1, rep(0, (nyr-1))),
-                                                    tck=0,
-                                                    cex = 0.7),
-                                            y=list(
-                                                    at = c(0, 1, 2, 3, 4, 5, 6),
-                                                    labels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
-                                                               "Friday", "Saturday"),
-                                                    alternating = 1,
-                                                    cex = 0.6,
-                                                    tck=0)),
-                                    xlim =c(0.4, 54.6),
-                                    ylim=c(6.6,-0.6),
-                                    cuts= ncolors - 1,
-                                    col.regions = (calendar.pal(ncolors)),
-                                    xlab="" ,
-                                    ylab="",
-                                    colorkey= list(col = calendar.pal(ncolors), width = 0.6, height = 0.5),
-                                    subscripts=TRUE
-        ) )
-        panel.locs <- trellis.currentLayout()
-        for (row in 1:nrow(panel.locs)) {
-                for (column in 1:ncol(panel.locs))  {
-                        if (panel.locs[row, column] > 0)
-                        {
-                                trellis.focus("panel", row = row, column = column,
-                                              highlight = FALSE)
-                                xyetc <- trellis.panelArgs()
-                                subs <- caldat[xyetc$subscripts,]
-                                dates.fsubs <- caldat[caldat$yr == unique(subs$yr),]
-                                y.start <- dates.fsubs$dotw[1]
-                                y.end   <- dates.fsubs$dotw[nrow(dates.fsubs)]
-                                dates.len <- nrow(dates.fsubs)
-                                adj.start <- dates.fsubs$woty[1]
-                                
-                                for (k in 0:6) {
-                                        if (k < y.start) {
-                                                x.start <- adj.start + 0.5
-                                        } else {
-                                                x.start <- adj.start - 0.5
-                                        }
-                                        if (k > y.end) {
-                                                x.finis <- dates.fsubs$woty[nrow(dates.fsubs)] - 0.5
-                                        } else {
-                                                x.finis <- dates.fsubs$woty[nrow(dates.fsubs)] + 0.5
-                                        }
-                                        grid.lines(x = c(x.start, x.finis), y = c(k -0.5, k - 0.5), 
-                                                   default.units = "native", gp=gpar(col = "grey", lwd = 1))
-                                }
-                                if (adj.start <  2) {
-                                        grid.lines(x = c( 0.5,  0.5), y = c(6.5, y.start-0.5), 
-                                                   default.units = "native", gp=gpar(col = "grey", lwd = 1))
-                                        grid.lines(x = c(1.5, 1.5), y = c(6.5, -0.5), default.units = "native",
-                                                   gp=gpar(col = "grey", lwd = 1))
-                                        grid.lines(x = c(x.finis, x.finis), 
-                                                   y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
-                                                   gp=gpar(col = "grey", lwd = 1))
-                                        if (dates.fsubs$dotw[dates.len] != 6) {
-                                                grid.lines(x = c(x.finis + 1, x.finis + 1), 
-                                                           y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
-                                                           gp=gpar(col = "grey", lwd = 1))
-                                        }
-                                        grid.lines(x = c(x.finis, x.finis), 
-                                                   y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
-                                                   gp=gpar(col = "grey", lwd = 1))
-                                }
-                                for (n in 1:51) {
-                                        grid.lines(x = c(n + 1.5, n + 1.5), 
-                                                   y = c(-0.5, 6.5), default.units = "native", gp=gpar(col = "grey", lwd = 1))
-                                }
-                                x.start <- adj.start - 0.5
-                                
-                                if (y.start > 0) {
-                                        grid.lines(x = c(x.start, x.start + 1),
-                                                   y = c(y.start - 0.5, y.start -  0.5), default.units = "native",
-                                                   gp=gpar(col = "black", lwd = 1.75))
-                                        grid.lines(x = c(x.start + 1, x.start + 1),
-                                                   y = c(y.start - 0.5 , -0.5), default.units = "native",
-                                                   gp=gpar(col = "black", lwd = 1.75))
-                                        grid.lines(x = c(x.start, x.start),
-                                                   y = c(y.start - 0.5, 6.5), default.units = "native",
-                                                   gp=gpar(col = "black", lwd = 1.75))
-                                        if (y.end < 6  ) {
-                                                grid.lines(x = c(x.start + 1, x.finis + 1),
-                                                           y = c(-0.5, -0.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                                grid.lines(x = c(x.start, x.finis),
-                                                           y = c(6.5, 6.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                        } else {
-                                                grid.lines(x = c(x.start + 1, x.finis),
-                                                           y = c(-0.5, -0.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                                grid.lines(x = c(x.start, x.finis),
-                                                           y = c(6.5, 6.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                        }
-                                } else {
-                                        grid.lines(x = c(x.start, x.start),
-                                                   y = c( - 0.5, 6.5), default.units = "native",
-                                                   gp=gpar(col = "black", lwd = 1.75))
-                                }
-                                
-                                if (y.start == 0 ) {
-                                        if (y.end < 6  ) {
-                                                grid.lines(x = c(x.start, x.finis + 1),
-                                                           y = c(-0.5, -0.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                                grid.lines(x = c(x.start, x.finis),
-                                                           y = c(6.5, 6.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                        } else {
-                                                grid.lines(x = c(x.start + 1, x.finis),
-                                                           y = c(-0.5, -0.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                                grid.lines(x = c(x.start, x.finis),
-                                                           y = c(6.5, 6.5), default.units = "native",
-                                                           gp=gpar(col = "black", lwd = 1.75))
-                                        }
-                                }
-                                for (j in 1:12)  {
-                                        last.month <- max(dates.fsubs$seq[dates.fsubs$month == j])
-                                        x.last.m <- dates.fsubs$woty[last.month] + 0.5
-                                        y.last.m <- dates.fsubs$dotw[last.month] + 0.5
-                                        grid.lines(x = c(x.last.m, x.last.m), y = c(-0.5, y.last.m),
-                                                   default.units = "native", gp=gpar(col = "black", lwd = 1.75))
-                                        if ((y.last.m) < 6) {
-                                                grid.lines(x = c(x.last.m, x.last.m - 1), y = c(y.last.m, y.last.m),
-                                                           default.units = "native", gp=gpar(col = "black", lwd = 1.75))
-                                                grid.lines(x = c(x.last.m - 1, x.last.m - 1), y = c(y.last.m, 6.5),
-                                                           default.units = "native", gp=gpar(col = "black", lwd = 1.75))
-                                        } else {
-                                                grid.lines(x = c(x.last.m, x.last.m), y = c(- 0.5, 6.5),
-                                                           default.units = "native", gp=gpar(col = "black", lwd = 1.75))
-                                        }
-                                }
-                        }
-                }
-                trellis.unfocus()
-        } 
-        lattice.options(default.theme = def.theme)
+# dates_all %>% mutate(month = month(Date)) %>% 
+#         group_by(month) %>% summarise(month_count = n()) %>% 
+#         ggplot(.) + aes(x = month, y = month_count) + geom_line()
+# 1st look
+
+
+
+# ignore: calendar heat: https://github.com/jbryer/makeR/blob/master/R/calendarHeat.R -----------------------------------------------------------
+# 
+# calendario <- function(dates, 
+#                          values, 
+#                          ncolors=99, 
+#                          color="r2g", 
+#                          varname="Values",
+#                          date.form = "%Y-%m-%d", ...) {
+#         require(lattice)
+#         require(grid)
+#         require(chron)
+#         if (class(dates) == "character" | class(dates) == "factor" ) {
+#                 dates <- strptime(dates, date.form)
+#         }
+#         caldat <- data.frame(value = values, dates = dates)
+#         min.date <- as.Date(paste(format(min(dates), "%Y"),
+#                                   "-1-1",sep = ""))
+#         max.date <- as.Date(paste(format(max(dates), "%Y"),
+#                                   "-12-31", sep = ""))
+#         dates.f <- data.frame(date.seq = seq(min.date, max.date, by="days"))
+#         
+#         # Merge moves data by one day, avoid
+#         caldat <- data.frame(date.seq = seq(min.date, max.date, by="days"), value = NA)
+#         dates <- as.Date(dates) 
+#         caldat$value[match(dates, caldat$date.seq)] <- values
+#         
+#         caldat$dotw <- as.numeric(format(caldat$date.seq, "%w"))
+#         caldat$woty <- as.numeric(format(caldat$date.seq, "%U")) + 1
+#         caldat$yr <- as.factor(format(caldat$date.seq, "%Y"))
+#         caldat$month <- as.numeric(format(caldat$date.seq, "%m"))
+#         yrs <- as.character(unique(caldat$yr))
+#         d.loc <- as.numeric()                        
+#         for (m in min(yrs):max(yrs)) {
+#                 d.subset <- which(caldat$yr == m)  
+#                 sub.seq <- seq(1,length(d.subset))
+#                 d.loc <- c(d.loc, sub.seq)
+#         }  
+#         caldat <- cbind(caldat, seq=d.loc)
+#         
+#         #color styles
+#         r2b <- c("#0571B0", "#92C5DE", "#F7F7F7", "#F4A582", "#CA0020") #red to blue                                                                               
+#         r2g <- c("#D61818", "#FFAE63", "#FFFFBD", "#B5E384")   #red to green
+#         w2b <- c("#045A8D", "#2B8CBE", "#74A9CF", "#BDC9E1", "#F1EEF6")   #white to blue
+#         
+#         assign("col.sty", get(color))
+#         calendar.pal <- colorRampPalette((col.sty), space = "Lab")
+#         def.theme <- lattice.getOption("default.theme")
+#         cal.theme <-
+#                 function() {  
+#                         theme <-
+#                                 list(
+#                                         strip.background = list(col = "transparent"),
+#                                         strip.border = list(col = "transparent"),
+#                                         axis.line = list(col="transparent"),
+#                                         par.strip.text=list(cex=0.8))
+#                 }
+#         lattice.options(default.theme = cal.theme)
+#         yrs <- (unique(caldat$yr))
+#         nyr <- length(yrs)
+#         print(cal.plot <- levelplot(value~woty*dotw | yr, data=caldat,
+#                                     as.table=TRUE,
+#                                     aspect=.12,
+#                                     layout = c(1, nyr),
+#                                     between = list(x=0, y=c(0.5, 0.5)),
+#                                     strip=TRUE,
+#                                     main = paste("Calendar Heat Map of ", varname, sep = ""),
+#                                     scales = list(
+#                                             x = list(
+#                                                     at= c(seq(2.9, 52, by=4.42)),
+#                                                     labels = month.abb,
+#                                                     alternating = c(1, rep(0, (nyr-1))),
+#                                                     tck=0,
+#                                                     cex = 0.7),
+#                                             y=list(
+#                                                     at = c(0, 1, 2, 3, 4, 5, 6),
+#                                                     labels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
+#                                                                "Friday", "Saturday"),
+#                                                     alternating = 1,
+#                                                     cex = 0.6,
+#                                                     tck=0)),
+#                                     xlim =c(0.4, 54.6),
+#                                     ylim=c(6.6,-0.6),
+#                                     cuts= ncolors - 1,
+#                                     col.regions = (calendar.pal(ncolors)),
+#                                     xlab="" ,
+#                                     ylab="",
+#                                     colorkey= list(col = calendar.pal(ncolors), width = 0.6, height = 0.5),
+#                                     subscripts=TRUE
+#         ) )
+#         panel.locs <- trellis.currentLayout()
+#         for (row in 1:nrow(panel.locs)) {
+#                 for (column in 1:ncol(panel.locs))  {
+#                         if (panel.locs[row, column] > 0)
+#                         {
+#                                 trellis.focus("panel", row = row, column = column,
+#                                               highlight = FALSE)
+#                                 xyetc <- trellis.panelArgs()
+#                                 subs <- caldat[xyetc$subscripts,]
+#                                 dates.fsubs <- caldat[caldat$yr == unique(subs$yr),]
+#                                 y.start <- dates.fsubs$dotw[1]
+#                                 y.end   <- dates.fsubs$dotw[nrow(dates.fsubs)]
+#                                 dates.len <- nrow(dates.fsubs)
+#                                 adj.start <- dates.fsubs$woty[1]
+#                                 
+#                                 for (k in 0:6) {
+#                                         if (k < y.start) {
+#                                                 x.start <- adj.start + 0.5
+#                                         } else {
+#                                                 x.start <- adj.start - 0.5
+#                                         }
+#                                         if (k > y.end) {
+#                                                 x.finis <- dates.fsubs$woty[nrow(dates.fsubs)] - 0.5
+#                                         } else {
+#                                                 x.finis <- dates.fsubs$woty[nrow(dates.fsubs)] + 0.5
+#                                         }
+#                                         grid.lines(x = c(x.start, x.finis), y = c(k -0.5, k - 0.5), 
+#                                                    default.units = "native", gp=gpar(col = "grey", lwd = 1))
+#                                 }
+#                                 if (adj.start <  2) {
+#                                         grid.lines(x = c( 0.5,  0.5), y = c(6.5, y.start-0.5), 
+#                                                    default.units = "native", gp=gpar(col = "grey", lwd = 1))
+#                                         grid.lines(x = c(1.5, 1.5), y = c(6.5, -0.5), default.units = "native",
+#                                                    gp=gpar(col = "grey", lwd = 1))
+#                                         grid.lines(x = c(x.finis, x.finis), 
+#                                                    y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
+#                                                    gp=gpar(col = "grey", lwd = 1))
+#                                         if (dates.fsubs$dotw[dates.len] != 6) {
+#                                                 grid.lines(x = c(x.finis + 1, x.finis + 1), 
+#                                                            y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
+#                                                            gp=gpar(col = "grey", lwd = 1))
+#                                         }
+#                                         grid.lines(x = c(x.finis, x.finis), 
+#                                                    y = c(dates.fsubs$dotw[dates.len] -0.5, -0.5), default.units = "native",
+#                                                    gp=gpar(col = "grey", lwd = 1))
+#                                 }
+#                                 for (n in 1:51) {
+#                                         grid.lines(x = c(n + 1.5, n + 1.5), 
+#                                                    y = c(-0.5, 6.5), default.units = "native", gp=gpar(col = "grey", lwd = 1))
+#                                 }
+#                                 x.start <- adj.start - 0.5
+#                                 
+#                                 if (y.start > 0) {
+#                                         grid.lines(x = c(x.start, x.start + 1),
+#                                                    y = c(y.start - 0.5, y.start -  0.5), default.units = "native",
+#                                                    gp=gpar(col = "black", lwd = 1.75))
+#                                         grid.lines(x = c(x.start + 1, x.start + 1),
+#                                                    y = c(y.start - 0.5 , -0.5), default.units = "native",
+#                                                    gp=gpar(col = "black", lwd = 1.75))
+#                                         grid.lines(x = c(x.start, x.start),
+#                                                    y = c(y.start - 0.5, 6.5), default.units = "native",
+#                                                    gp=gpar(col = "black", lwd = 1.75))
+#                                         if (y.end < 6  ) {
+#                                                 grid.lines(x = c(x.start + 1, x.finis + 1),
+#                                                            y = c(-0.5, -0.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                                 grid.lines(x = c(x.start, x.finis),
+#                                                            y = c(6.5, 6.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                         } else {
+#                                                 grid.lines(x = c(x.start + 1, x.finis),
+#                                                            y = c(-0.5, -0.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                                 grid.lines(x = c(x.start, x.finis),
+#                                                            y = c(6.5, 6.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                         }
+#                                 } else {
+#                                         grid.lines(x = c(x.start, x.start),
+#                                                    y = c( - 0.5, 6.5), default.units = "native",
+#                                                    gp=gpar(col = "black", lwd = 1.75))
+#                                 }
+#                                 
+#                                 if (y.start == 0 ) {
+#                                         if (y.end < 6  ) {
+#                                                 grid.lines(x = c(x.start, x.finis + 1),
+#                                                            y = c(-0.5, -0.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                                 grid.lines(x = c(x.start, x.finis),
+#                                                            y = c(6.5, 6.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                         } else {
+#                                                 grid.lines(x = c(x.start + 1, x.finis),
+#                                                            y = c(-0.5, -0.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                                 grid.lines(x = c(x.start, x.finis),
+#                                                            y = c(6.5, 6.5), default.units = "native",
+#                                                            gp=gpar(col = "black", lwd = 1.75))
+#                                         }
+#                                 }
+#                                 for (j in 1:12)  {
+#                                         last.month <- max(dates.fsubs$seq[dates.fsubs$month == j])
+#                                         x.last.m <- dates.fsubs$woty[last.month] + 0.5
+#                                         y.last.m <- dates.fsubs$dotw[last.month] + 0.5
+#                                         grid.lines(x = c(x.last.m, x.last.m), y = c(-0.5, y.last.m),
+#                                                    default.units = "native", gp=gpar(col = "black", lwd = 1.75))
+#                                         if ((y.last.m) < 6) {
+#                                                 grid.lines(x = c(x.last.m, x.last.m - 1), y = c(y.last.m, y.last.m),
+#                                                            default.units = "native", gp=gpar(col = "black", lwd = 1.75))
+#                                                 grid.lines(x = c(x.last.m - 1, x.last.m - 1), y = c(y.last.m, 6.5),
+#                                                            default.units = "native", gp=gpar(col = "black", lwd = 1.75))
+#                                         } else {
+#                                                 grid.lines(x = c(x.last.m, x.last.m), y = c(- 0.5, 6.5),
+#                                                            default.units = "native", gp=gpar(col = "black", lwd = 1.75))
+#                                         }
+#                                 }
+#                         }
+#                 }
+#                 trellis.unfocus()
+#         } 
+#         lattice.options(default.theme = def.theme)
+# }
+# 
+# 
+# calendar1 <- calendario(dates = dates_all$Date, values = dates_all$date_count)
+# 
+
+
+
+# 4. Descriptive stats ----------------------------------------------------
+# Subset DF to keep variables of interest
+adults_sub <- adults_raw[, -c(1, 15, 16, 17, 18, 19, 20, 21, 22, 33,34, 35, 38, 39, 40, 42, 43, 44)]
+adults_sub <- adults_sub[-which(adults_sub$Age < 18),]
+# Group Age var
+adults_sub$Age[adults_sub$Age >= 18 & adults_sub$Age <= 25] <- "18-25"
+adults_sub$Age[adults_sub$Age > 25 & adults_sub$Age <= 35] <- "26-35"
+adults_sub$Age[adults_sub$Age > 35 & adults_sub$Age <= 45] <- "36-45"
+adults_sub$Age[adults_sub$Age > 45 & adults_sub$Age <= 55] <- "46-55"
+adults_sub$Age[adults_sub$Age > 55] <- ">55"
+
+# Tables. Keep NAs. Also use prop.table(table, margin = 1) * 100
+ldsq_gender <- table(adults_sub$LD_diag, adults_sub$Gender, exclude = NULL)  # ldsq + gender
+ldsq_age <- table(adults_sub$LD_diag, adults_sub$Age, exclude = NULL)  # ldsq + age
+ldsq_ethn <- table(adults_sub$LD_diag, adults_sub$Ethnicity, exclude = NULL)  # ldsq + ethnicity
+ldsq_rel <- table(adults_sub$LD_diag, adults_sub$Religion, exclude = NULL)  # ldsq + religion
+ldsq_uni <- table(adults_sub$LD_diag, adults_sub$Uni..Student, exclude = NULL)  # ldsq + uni student
+ldsq_phys <- table(adults_sub$LD_diag, adults_sub$Physical.disability, exclude = NULL)  # ldsq + physical disability
+ldsq_learn <- table(adults_sub$LD_diag, adults_sub$Learning.disability, exclude = NULL)  # ldsq + learning disability
+ldsq_DV <- table(adults_sub$LD_diag, adults_sub$DV.history, exclude = NULL)  # ldsq + DV
+ldsq_context <- table(adults_sub$LD_diag, adults_sub$FME.context, exclude = NULL)  # ldsq + context
+ldsq_time <- table(adults_sub$LD_diag, adults_sub$Time.since.assault, exclude = NULL)  # ldsq + time since assault
+ldsq_as_1 <- table(adults_sub$LD_diag, adults_sub$Assault.type.1, exclude = NULL)  # ldsq + assault type 1
+ldsq_as_2 <- table(adults_sub$LD_diag, adults_sub$Assault.type.2, exclude = NULL)  # ldsq + assault type 2
+ldsq_as_3 <- table(adults_sub$LD_diag, adults_sub$Assault.type.3, exclude = NULL)  # ldsq + assault type 3
+ldsq_as_4 <- table(adults_sub$LD_diag, adults_sub$Assault.type.4, exclude = NULL)  # ldsq + assault type 4
+ldsq_strang <- table(adults_sub$LD_diag, adults_sub$Strangulation, exclude = NULL)  # ldsq + strangulation
+ldsq_nperp <- table(adults_sub$LD_diag, adults_sub$No..of.perps., exclude = NULL)  # ldsq + number of perpetrators
+ldsq_relat <- table(adults_sub$LD_diag, adults_sub$Relationship.to.alleged.perp., exclude = NULL)  # ldsq + relationship to perp
+
+# list of tables here
+
+# For percentages
+tables_perc <- function(x) {prop.table(x, margin = 1) * 100}  # to use with lapply() over the list of tables
+
+
+# Use this to print tables
+grid.arrange(
+        tableGrob(ldsq_ethn),
+        tableGrob(ldsq_age[, c(2, 3, 4, 5, 1)]),
+        ncol = 1
+)
+
+# Mosaics
+mosaic(~ LD_diag + Gender, data = adults_sub, shade = TRUE, legend = FALSE)
+mosaic(~ LD_diag + Age, data = adults_sub, shade = TRUE, legend = FALSE)
+
+
+# Histograms
+catad <- names(adults_sub)[which(sapply(adults_sub, is.character))]
+adult_cat <- select(adults_sub, catad)  # select categorical variables for histograms
+legend_plot <- ggplot(data=adults_sub, aes(x=factor(Gender), fill = factor(LD_diag))) + stat_count() + labs(fill = "Likely to have LD") + 
+        theme_fivethirtyeight()
+legendd <- cowplot::get_legend(legend_plot)  # legend to use for combined plots in grid_plot()
+ggsave(filename = "legend_ld.pdf", path = "./plots", plot = legendd, device = "pdf")  # save in same folder as plots
+      
+
+plotHist <- function(input, i) {
+        data <- data.frame(x=input[[i]])
+        his <- ggplot(data=data, aes(x=factor(x), fill = factor(adults_sub$LD_diag))) + stat_count() + 
+                xlab(colnames(input)[i]) +
+                theme_fivethirtyeight() + 
+                theme(axis.text.x = element_text(angle = 70, hjust = 1), legend.position = "none") + 
+                labs(y = "", fill = "") 
+        return (his)
 }
 
+grid_plot <- function(input, fun, ii, ncols=1, nrows = 3, name, formatt = "pdf") {
+        plot_list <- list(legendd)
+        for (i in ii) {
+                plot <- fun(input=input, i=i)
+                plot_list <- c(plot_list, list(plot))
+        }
+        
+        plots_temp <- do.call("grid.arrange", c(plot_list, ncol = ncols, nrow = nrows))
+                                
+        ggsave(filename = paste0(name, ".", formatt), path = "./plots", 
+               plot = plots_temp, device = formatt)
+        
+}
 
-calendar1 <- calendario(dates = dates_all$Date, values = dates_all$date_count)
+# plotHist generates histogram of variables and fill with yes/no likely to have a learning disability
+# grid_plot generates histograms for columns selected and displays them in a defined layout
+
+grid_plot(adults_sub, plotHist, c(2,3), 
+          ncol = 3, nrows = 1, 
+          name = "plot_test", 
+          formatt = "pdf")
+
+
+
+
+
+
+
+
+
+
+
 
