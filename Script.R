@@ -1,13 +1,13 @@
-# 1/4/18. To do list:
-# 1. generate histogram for assault types (melt data before)
-# 1.1. Descriptives of the whole population. Use grid.table(table) to visualize tables
-# 2. generate mosaics (?)
-# 3. Create a adults_dates and achild_dates dataframes grouped by count
+# 3/4/18. To do list:
+# 1. Create DF with columns: All dates, Age, learning disability. Use for temporal frequencies (line 637)
+# 1.2. Day to day frequency lines
 # 4. Geocode area of residence
 # 5. Map data
 # Ages (numerical) boxplot
 # LDSQ (numerical) scores boxplot
 # Run a regex to check invalid strings and substitute them for NA
+# change ggsaves to format = "tiff", dpi = 600
+# Or tiff("image.tif", res=800, compression = "lzw", height=5, width=5, units="in")
 
 
 # Create folders and download data ----------------------------------------
@@ -15,6 +15,8 @@
 
 if (!dir.exists("./data")) dir.create("./data")
 if (!dir.exists("./plots")) dir.create("./plots")
+if (!dir.exists("./plots/tables")) dir.create("./plots/tables")
+if (!dir.exists("./plots/time")) dir.create("./plots/time")
 url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/data_raw.xlsx?raw=true"
 download.file(url, destfile = "./data/data_raw.xlsx", mode = "wb")
 
@@ -36,7 +38,8 @@ library(ggthemes)
 library(psych)
 library(vcd)
 library(cowplot)
-
+library(reshape2)
+library(ggmap)
 
 # 1. Read data -----------------------------------------------------------
 list.files("./data", pattern = ".xlsx")
@@ -78,10 +81,10 @@ adults_dates <- data.frame(rem_col(adults_dates))
 adults_dates <- data.frame(rem_row(adults_dates))
 adults_raw$Date.attended <- adults_dates[, 1]
 
-child_dates <- read.xlsx("./data/data_raw.xlsx", sheetIndex = 2, colIndex = 2, startRow = 2, header = TRUE, colClasses = "Date")
-child_dates <- data.frame(rem_col(child_dates))
-child_dates <- data.frame(rem_row(child_dates))
-child_raw$Date.attended <- child_dates[, 1]
+childs_dates <- read.xlsx("./data/data_raw.xlsx", sheetIndex = 2, colIndex = 2, startRow = 2, header = TRUE, colClasses = "Date")
+childs_dates <- data.frame(rem_col(childs_dates))
+childs_dates <- data.frame(rem_row(childs_dates))
+child_raw$Date.attended <- childs_dates[, 1]
 # set Date as data type of 2 col in colClasses arg in read.xlsx
 
 adults_raw$Age <- as.numeric(adults_raw$Age)
@@ -254,16 +257,6 @@ ggsave(filename = "adults_nas.pdf", path = "./plots", plot = adults_nas, device 
 ggsave(filename = "child_nas.pdf", path = "./plots", plot = child_nas, device = "pdf", units = "cm", height = 25, width = 20)
 
 # 3. Group variables and create new ones------------------------------------------------------
-# New DF with Date.attended from both DFs. For use later in calendar heat-map and time-series
-child_dates <- ymd(child_raw$Date.attended)
-adults_dates <- ymd(adults_raw$Date.attended)
-dates_all<- c(child_dates, adults_dates)
-dates_all <- tibble(Date = dates_all)
-dates_all <- dates_all %>% group_by(Date) %>% summarise(date_count = n())
-
-adult_date_tib <- tibble(Date = ymd(adults_raw$Date.attended))
-adult_date_tib <- adult_date_tib %>% group_by(Date) %>% summarise(date_count = n())
-
 # ldsq yes/no
 adults_raw <- mutate(adults_raw, LD_diag = ifelse(LDSQ.. < 46, "yes", "no"))
 
@@ -377,16 +370,291 @@ grid_plot(adults_sub, plotHist, ii= 23:26, ncol = 2, nrows = 2, name = "int_harm
 grid_plot(adults_sub, plotHist, ii= 5, ncol = 1, nrows = 1, name = "Areaofresidence_hist", formatt = "pdf")
 grid_plot(adults_sub, plotHist, ii= 6, ncol = 1, nrows = 1, name = "Ethnicity_hist", formatt = "pdf")
 grid_plot(adults_sub, plotHist, ii= 22, ncol = 1, nrows = 1, name = "Relationship_hist", formatt = "pdf")
+# Assault types
+assault_types_hist <- adults_sub %>% select(Assault.type.1:Assault.type.4, LD_diag) %>% gather(key, value, -LD_diag) %>% select(LD_diag, value) %>% filter(!is.na(value)) %>% 
+        ggplot(., aes(x=factor(value), fill = factor(LD_diag))) + stat_count() + 
+                theme_fivethirtyeight() + 
+                theme(axis.text.x = element_text(angle = 70, hjust = 1), legend.position = "top") + 
+                scale_fill_brewer(palette = "Set3", na.value = "grey") +
+                labs(title = "Assault types", fill = "Likely to have LD") + 
+                coord_flip()
+ggsave(filename = "Assault_types_hist.pdf", path = "./plots", 
+               plot = assault_types_hist, device = "pdf")
+
+# 4.3. Descriptives of population -----------------------------------
+# General structure to print cross tabs:
+referrer_table <- adults_sub %>% 
+        count(LD_diag, Referrer) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Referrer, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+pathway_table <- adults_sub %>% 
+        count(LD_diag, Pathway) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Pathway, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+age_table <- adults_sub %>% 
+        count(LD_diag, Age) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Age, Percentage) %>%
+        tableGrob(rows = NULL)
+gender_table <- adults_sub %>% 
+        count(LD_diag, Gender) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Gender, Percentage) %>%
+        tableGrob(rows = NULL)
+
+grid.arrange(textGrob("Age", gp=gpar(fontsize=15, fontface=3L)), age_table, 
+             textGrob("Gender", gp=gpar(fontsize=15, fontface=3L)), gender_table, textGrob("Referrer", gp=gpar(fontsize=15, fontface=3L)), referrer_table, 
+             textGrob("Pathway", gp=gpar(fontsize=15, fontface=3L)), pathway_table, ncol= 4, nrow = 2) %>% 
+        ggsave(filename = "age_gender_ref_path.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+area_table <- adults_sub %>% 
+        count(LD_diag, Area.of.residence) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Area.of.residence, Percentage) %>%
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Area of residence", gp=gpar(fontsize=15, fontface=3L)), area_table, ncol = 1) %>% 
+        ggsave(filename = "area.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+eth_table <- adults_sub %>% 
+        count(LD_diag, Ethnicity) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Ethnicity, Percentage) %>%
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Ethnicity", gp=gpar(fontsize=15, fontface=3L)), eth_table) %>% 
+        ggsave(filename = "eth.pdf", path = "./plots/tables", 
+                plot = . , device = "pdf")
+
+rel_table <- adults_sub %>% 
+        count(LD_diag, Religion) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Religion, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+uni_table <- adults_sub %>% 
+        count(LD_diag, Uni..Student) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Uni..Student, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Religion", gp=gpar(fontsize=15, fontface=3L)), rel_table, 
+             textGrob("University student", gp=gpar(fontsize=15, fontface=3L)), uni_table, 
+             ncol= 1, nrow = 4) %>% 
+        ggsave(filename = "rel_uni.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+phys_table <- adults_sub %>% 
+        count(LD_diag, Physical.disability) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Physical.disability, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+ld_table <- adults_sub %>% 
+        count(LD_diag, Learning.disability) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Learning.disability, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+mental_table <- adults_sub %>% 
+        count(LD_diag, Mental.health) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Mental.health, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+grid.arrange(textGrob("Physical disability", gp=gpar(fontsize=15, fontface=3L)), phys_table, 
+             textGrob("Learning disability (self-reported)", gp=gpar(fontsize=15, fontface=3L)), ld_table, 
+             textGrob("Mental health", gp=gpar(fontsize=15, fontface=3L)), mental_table,
+             ncol= 2, nrow = 3) %>% 
+        ggsave(filename = "phys_ld_mental_.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+inter_table <- adults_sub %>% 
+        count(LD_diag, Interpreter.used) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Interpreter.used, Percentage) %>% 
+        tableGrob(rows = NULL)
+
+dv_table <- adults_sub %>% 
+        count(LD_diag, DV.history) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(DV.history, Percentage) %>% 
+        tableGrob(rows = NULL)
+fme_table <- adults_sub %>% 
+        count(LD_diag, FME.context) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(FME.context, Percentage) %>% 
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Interpreter used", gp=gpar(fontsize=15, fontface=3L)), inter_table, 
+             textGrob("DV history", gp=gpar(fontsize=15, fontface=3L)), dv_table, 
+             textGrob("FME context", gp=gpar(fontsize=15, fontface=3L)), fme_table,
+             ncol= 2, nrow = 3) %>% 
+        ggsave(filename = "inter_dv_fme.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+timesince_table <- adults_sub %>% 
+        count(LD_diag, Time.since.assault) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Time.since.assault, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+stran_table <- adults_sub %>% 
+        count(LD_diag, Strangulation) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Strangulation, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+nperps_table <- adults_sub %>% 
+        count(LD_diag, No..of.perps.) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(No..of.perps., Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+grid.arrange(textGrob("Time since assault", gp=gpar(fontsize=15, fontface=3L)), timesince_table, 
+             textGrob("Strangulation", gp=gpar(fontsize=15, fontface=3L)), stran_table, 
+             textGrob("N. of perpetrators", gp=gpar(fontsize=15, fontface=3L)), nperps_table,
+             ncol= 2, nrow = 3) %>% 
+        ggsave(filename = "time_stran_nperps.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+relat_table <- adults_sub %>% 
+        count(LD_diag, Relationship.to.alleged.perp.) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Relationship.to.alleged.perp., Percentage) %>% 
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Relationship to alleged perpetrator", gp=gpar(fontsize=15, fontface=3L)), relat_table,
+             ncol= 1, nrow = 2) %>% 
+        ggsave(filename = "relat.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+internet_table <- adults_sub %>% 
+        count(LD_diag, Met.on.internet) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Met.on.internet, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+harm_table <- adults_sub %>% 
+        count(LD_diag, Self.harm) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Self.harm, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+
+subst_table <- adults_sub %>% 
+        count(LD_diag, Substance.misuse) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(Substance.misuse, Percentage) %>% select(-`<NA>`) %>% 
+        tableGrob(rows = NULL)
+grid.arrange(textGrob("Met on internet", gp=gpar(fontsize=15, fontface=3L)), internet_table, 
+             textGrob("Self harm", gp=gpar(fontsize=15, fontface=3L)), harm_table, 
+             textGrob("Substance misuse", gp=gpar(fontsize=15, fontface=3L)), subst_table,
+             ncol= 2, nrow = 3) %>% 
+        ggsave(filename = "int_harm_subst.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
+
+ldsq_table <- adults_sub %>% 
+        count(LD_diag, LDSQ..) %>% 
+        mutate(Percentage = round(n/sum(n) * 100, digits = 2)) %>% 
+        rename(LD = LD_diag) %>% 
+        select(-n) %>% spread(LDSQ.., Percentage) %>% 
+        tableGrob(rows = NULL)
+
+grid.arrange(textGrob("LDSQ scores", gp=gpar(fontsize=15, fontface=3L)), ldsq_table, 
+             ncol= 1, nrow = 2) %>% 
+        ggsave(filename = "ldsq_score.pdf", path = "./plots/tables", 
+               plot = . , device = "pdf")
 
 
 
 
 
 
+# 4.4. Temporal frequencies -----------------------------------------------
+Sys.setlocale("LC_ALL","English")
+
+child_dates <- ymd(child_raw$Date.attended)  # children dates
+adults_dates <- ymd(adults_raw$Date.attended)  # adults dates
+dates_all <-  c(child_dates, adults_dates)
+dates_all <- data.frame(Date = as.Date(dates_all, "%Y-%m-%d"))
+# all dates
+
+all_wdays <- dates_all %>% 
+                mutate(Day_of_week = lubridate::wday(dates_all$Date, label = TRUE)) %>% 
+                select(-Date) %>% group_by(Day_of_week) %>% summarize(Number = n())
+
+# Might be better to create DF with columns: all dates along, LD diagnosed, Age
+# Then just use select and filter functions
+# RColorBrewer::brewer.pal(n = 6, name = "Set3") gives hex codes for the palette used for histograms. Use for visual consistency.
+
+wdays_all <- ggplot(data=dates_all, aes(x=lubridate::wday(Date, label = TRUE))) + stat_count(fill="#80B1D3") + 
+        theme_fivethirtyeight() + 
+        theme(axis.text.x = element_text(hjust = 0.5), legend.position = "none") + 
+        labs(x= "", y= "", fill = "", title = "Clients per day of week") 
+ggsave(plot = wdays_all, filename = "daysweek_hist.pdf", path = "./plots/time", device = "pdf", height = 20, width = 15, units = "cm")
+
+wdays_child <- ggplot(data = tibble(Date = child_dates), aes(x=lubridate::wday(Date, label = TRUE))) +
+        stat_count(fill="#80B1D3") + 
+        theme_fivethirtyeight() + 
+        theme(axis.text.x = element_text(hjust = 0.5), legend.position = "none") + 
+        labs(x= "", y= "", fill = "", subtitle = "Children", title = "Clients per day of week")
+wdays_adult <- ggplot(data = tibble(Date = adults_dates), aes(x=lubridate::wday(Date, label = TRUE))) +
+        stat_count(fill="#80B1D3") + 
+        theme_fivethirtyeight() + 
+        theme(axis.text.x = element_text(hjust = 0.5), legend.position = "none") + 
+        labs(x= "", y= "", fill = "", subtitle = "Adults")
+ggsave(plot = wdays_adult, filename = "wdays_adult.pdf", path = "./plots/time", device = "pdf", height = 15, width = 10, units = "cm")
+
+ggsave(grid.arrange(wdays_child, wdays_adult, ncol = 1, nrow = 2), filename = "wdays_adult_ch.pdf", path = "./plots/time", device = "pdf", height = 18, width = 12, units = "cm")
+
+ggplot(data = tibble(Date = adults_dates), aes(x=lubridate::wday(Date, label = TRUE))) +
+        stat_count(fill="#80B1D3") + 
+        theme_fivethirtyeight() + 
+        theme(axis.text.x = element_text(hjust = 0.5), legend.position = "none") + 
+        labs(x= "", y= "", fill = "", subtitle = "Adults")
+
+adults_month <- tibble(Date = adults_dates) %>% group_by(Month = lubridate::month(Date, label = TRUE)) %>% summarise(Count = n())
+child_month <- tibble(Date = child_dates) %>% group_by(Month = lubridate::month(Date, label = TRUE)) %>% summarise(Count = n())
+
+months_line <- ggplot(data = adults_month, aes(x=Month, y = Count, group = 1)) +
+        geom_line(colour="#80B1D3") + 
+        geom_line(data = child_month, colour = "#FDB462") +
+        theme_fivethirtyeight() + 
+        labs(x= "", y= "")
+ggsave(months_line, filename = "month_line.pdf", path = "./plots/time", device = "pdf", width = 250, height = 100, units = "mm")
+
+
+days_month_all <- ggplot(data = dates_all, aes(x = lubridate::day(Date))) + stat_count(fill="#FDB462") + 
+                        scale_x_continuous(breaks = c(1, 31)) +
+                        theme_fivethirtyeight() +
+                        labs(title = "Aggregate number clients per day of month", subtitle = "Adults and children")
+ggsave(filename = "days_month_all.tiff", plot = days_month_all, path = "./plots/time", height= 15, width= 20, units="cm", dpi=600, compression = "lzw")
 
 
 
 
-
+# 4.5. Maps ---------------------------------------------------------------
 
 
