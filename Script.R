@@ -1,5 +1,6 @@
-# 31/3/18. To do list:
-# 1. generate histograms
+# 1/4/18. To do list:
+# 1. generate histogram for assault types (melt data before)
+# 1.1. Descriptives of the whole population
 # 2. generate mosaics (?)
 # 3. Create a adults_dates and achild_dates dataframes grouped by count
 # 4. Geocode area of residence
@@ -97,6 +98,7 @@ child_raw$CAIDSQ.. <- as.numeric(child_raw$CAIDSQ..)
 # Adults
 unique(adults_raw$Referrer)
 adults_raw$Referrer[adults_raw$Referrer == "police" | adults_raw$Referrer == "social services"] <- "police/social services"
+adults_raw$Referrer[adults_raw$Referrer == "NA"] <- NA
 unique(adults_raw$Pathway)
 unique(adults_raw$Gender)
 unique(adults_raw$Area.of.residence)
@@ -245,9 +247,10 @@ plotNa <- function(dataFrame, title = NULL) {
         
 }
 
-plotNa(adults_raw)
-plotNa(child_raw)
-
+adults_nas<- plotNa(adults_raw)
+child_nas <- plotNa(child_raw)
+ggsave(filename = "adults_nas.pdf", path = "./plots", plot = adults_nas, device = "pdf", units = "cm", height = 25, width = 20)
+ggsave(filename = "child_nas.pdf", path = "./plots", plot = child_nas, device = "pdf", units = "cm", height = 25, width = 20)
 
 # 3. Group variables and create new ones------------------------------------------------------
 # New DF with Date.attended from both DFs. For use later in calendar heat-map and time-series
@@ -497,7 +500,7 @@ adults_sub$Age[adults_sub$Age >= 18 & adults_sub$Age <= 25] <- "18-25"
 adults_sub$Age[adults_sub$Age > 25 & adults_sub$Age <= 35] <- "26-35"
 adults_sub$Age[adults_sub$Age > 35 & adults_sub$Age <= 45] <- "36-45"
 adults_sub$Age[adults_sub$Age > 45 & adults_sub$Age <= 55] <- "46-55"
-adults_sub$Age[adults_sub$Age > 55] <- ">55"
+adults_sub$Age[adults_sub$Age > 55] <- "55+"
 
 # Tables. Keep NAs. Also use prop.table(table, margin = 1) * 100
 ldsq_gender <- table(adults_sub$LD_diag, adults_sub$Gender, exclude = NULL)  # ldsq + gender
@@ -536,11 +539,15 @@ mosaic(~ LD_diag + Gender, data = adults_sub, shade = TRUE, legend = FALSE)
 mosaic(~ LD_diag + Age, data = adults_sub, shade = TRUE, legend = FALSE)
 
 
-# Histograms
+# 4.2. Histograms ---------------------------------------------------------
+
 catad <- names(adults_sub)[which(sapply(adults_sub, is.character))]
 adult_cat <- select(adults_sub, catad)  # select categorical variables for histograms
-legend_plot <- ggplot(data=adults_sub, aes(x=factor(Gender), fill = factor(LD_diag))) + stat_count() + labs(fill = "Likely to have LD") + 
-        theme_fivethirtyeight()
+legend_plot <- ggplot(data=adults_sub, aes(x=factor(Gender), fill = factor(LD_diag))) + stat_count() + 
+        labs(fill = "Likely to have LD") + 
+        theme_fivethirtyeight() + 
+        theme(axis.text.x = element_text(angle = 70, hjust = 1)) + 
+        scale_fill_brewer(palette = "Set3", na.value = "grey")
 legendd <- cowplot::get_legend(legend_plot)  # legend to use for combined plots in grid_plot()
 ggsave(filename = "legend_ld.pdf", path = "./plots", plot = legendd, device = "pdf")  # save in same folder as plots
       
@@ -551,12 +558,14 @@ plotHist <- function(input, i) {
                 xlab(colnames(input)[i]) +
                 theme_fivethirtyeight() + 
                 theme(axis.text.x = element_text(angle = 70, hjust = 1), legend.position = "none") + 
-                labs(y = "", fill = "") 
+                scale_fill_brewer(palette = "Set3", na.value = "grey") +
+                labs(fill = "", title = names(input[i]))
+                
         return (his)
 }
 
-grid_plot <- function(input, fun, ii, ncols=1, nrows = 3, name, formatt = "pdf") {
-        plot_list <- list(legendd)
+grid_plot <- function(input, fun, ii, ncols=1, nrows = 2, name, formatt = "pdf",  width = 20, height = 20) {
+        plot_list <- list()  # For legend in every one: plot_list <- list(legendd) 
         for (i in ii) {
                 plot <- fun(input=input, i=i)
                 plot_list <- c(plot_list, list(plot))
@@ -565,17 +574,27 @@ grid_plot <- function(input, fun, ii, ncols=1, nrows = 3, name, formatt = "pdf")
         plots_temp <- do.call("grid.arrange", c(plot_list, ncol = ncols, nrow = nrows))
                                 
         ggsave(filename = paste0(name, ".", formatt), path = "./plots", 
-               plot = plots_temp, device = formatt)
+               plot = plots_temp, device = formatt,
+               width = width, height = height, units = "cm")
         
 }
 
 # plotHist generates histogram of variables and fill with yes/no likely to have a learning disability
 # grid_plot generates histograms for columns selected and displays them in a defined layout
+# COlumns on their own: Area of residence, Ethnicity, Assault types, Relationship to perp
 
-grid_plot(adults_sub, plotHist, c(2,3), 
-          ncol = 3, nrows = 1, 
-          name = "plot_test", 
-          formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 1, ncol = 1, nrows = 1, name = "Referrer_hist", formatt = "pdf")  # Referrer
+grid_plot(adults_sub, plotHist, ii= c(2,3), ncol = 1, nrows = 2, name = "Path_age_hist", formatt = "pdf") # Pathway and age
+grid_plot(adults_sub, plotHist, ii= c(4,7), ncol = 1, nrows = 2, name = "Gend_rel_hist", formatt = "pdf")  # Gender + religion
+grid_plot(adults_sub, plotHist, ii= 8:11, ncol = 2, nrows = 2, name = "Uni_dis_hist", formatt = "pdf")  # Uni + physical disability + learning disability + mental health
+grid_plot(adults_sub, plotHist, ii= 12:13, ncol = 1, nrows = 2, name = "Inter_DV_hist", formatt = "pdf")  # Interperter used + DV history
+grid_plot(adults_sub, plotHist, ii= c(14,15,20,21), ncol = 2, nrows = 2, name = "FME_time_strang_nperp_hist", formatt = "pdf")  # FME context + time since assault + strangulation + n of perps
+grid_plot(adults_sub, plotHist, ii= 23:26, ncol = 2, nrows = 2, name = "int_harm_subst_sex_hist", formatt = "pdf")  # Met on internet + self harm + substance misuse + sex worker
+
+grid_plot(adults_sub, plotHist, ii= 5, ncol = 1, nrows = 1, name = "Areaofresidence_hist", formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 6, ncol = 1, nrows = 1, name = "Ethnicity_hist", formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 22, ncol = 1, nrows = 1, name = "Relationship_hist", formatt = "pdf")
+
 
 
 
