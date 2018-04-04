@@ -1,6 +1,7 @@
-# 3/4/18. To do list:
-# 1. Create DF with columns: All dates, Age, learning disability. Use for temporal frequencies (line 637)
-# 1.2. Day to day frequency lines
+# 5/4/18. To do list:
+# Take a look at wrong dates in Date.attended
+# days_all_line is wrong. Dont use as character with dates
+# Generate legend for time plots
 # 4. Geocode area of residence
 # 5. Map data
 # Ages (numerical) boxplot
@@ -269,7 +270,7 @@ adults_raw <- mutate(adults_raw, LD_diag = ifelse(LDSQ.. < 46, "yes", "no"))
 
 # 4. Descriptive stats ----------------------------------------------------
 # Subset DF to keep variables of interest
-adults_sub <- adults_raw[, -c(1, 15, 16, 17, 18, 19, 20, 21, 22, 33,34, 35, 38, 39, 40, 42, 43, 44)]
+adults_sub <- adults_raw[, -c(15, 16, 17, 18, 19, 20, 21, 22, 33,34, 35, 38, 39, 40, 42, 43, 44)]
 adults_sub <- adults_sub[-which(adults_sub$Age < 18),]
 # Group Age var
 adults_sub$Age[adults_sub$Age >= 18 & adults_sub$Age <= 25] <- "18-25"
@@ -359,17 +360,17 @@ grid_plot <- function(input, fun, ii, ncols=1, nrows = 2, name, formatt = "pdf",
 # grid_plot generates histograms for columns selected and displays them in a defined layout
 # COlumns on their own: Area of residence, Ethnicity, Assault types, Relationship to perp
 
-grid_plot(adults_sub, plotHist, ii= 1, ncol = 1, nrows = 1, name = "Referrer_hist", formatt = "pdf")  # Referrer
-grid_plot(adults_sub, plotHist, ii= c(2,3), ncol = 1, nrows = 2, name = "Path_age_hist", formatt = "pdf") # Pathway and age
-grid_plot(adults_sub, plotHist, ii= c(4,7), ncol = 1, nrows = 2, name = "Gend_rel_hist", formatt = "pdf")  # Gender + religion
-grid_plot(adults_sub, plotHist, ii= 8:11, ncol = 2, nrows = 2, name = "Uni_dis_hist", formatt = "pdf")  # Uni + physical disability + learning disability + mental health
-grid_plot(adults_sub, plotHist, ii= 12:13, ncol = 1, nrows = 2, name = "Inter_DV_hist", formatt = "pdf")  # Interperter used + DV history
-grid_plot(adults_sub, plotHist, ii= c(14,15,20,21), ncol = 2, nrows = 2, name = "FME_time_strang_nperp_hist", formatt = "pdf")  # FME context + time since assault + strangulation + n of perps
-grid_plot(adults_sub, plotHist, ii= 23:26, ncol = 2, nrows = 2, name = "int_harm_subst_sex_hist", formatt = "pdf")  # Met on internet + self harm + substance misuse + sex worker
+grid_plot(adults_sub, plotHist, ii= 2, ncol = 1, nrows = 1, name = "Referrer_hist", formatt = "pdf")  # Referrer
+grid_plot(adults_sub, plotHist, ii= c(3,4), ncol = 1, nrows = 2, name = "Path_age_hist", formatt = "pdf") # Pathway and age
+grid_plot(adults_sub, plotHist, ii= c(5,8), ncol = 1, nrows = 2, name = "Gend_rel_hist", formatt = "pdf")  # Gender + religion
+grid_plot(adults_sub, plotHist, ii= 9:12, ncol = 2, nrows = 2, name = "Uni_dis_hist", formatt = "pdf")  # Uni + physical disability + learning disability + mental health
+grid_plot(adults_sub, plotHist, ii= 13:14, ncol = 1, nrows = 2, name = "Inter_DV_hist", formatt = "pdf")  # Interperter used + DV history
+grid_plot(adults_sub, plotHist, ii= c(15,16,21,22), ncol = 2, nrows = 2, name = "FME_time_strang_nperp_hist", formatt = "pdf")  # FME context + time since assault + strangulation + n of perps
+grid_plot(adults_sub, plotHist, ii= 24:27, ncol = 2, nrows = 2, name = "int_harm_subst_sex_hist", formatt = "pdf")  # Met on internet + self harm + substance misuse + sex worker
 
-grid_plot(adults_sub, plotHist, ii= 5, ncol = 1, nrows = 1, name = "Areaofresidence_hist", formatt = "pdf")
-grid_plot(adults_sub, plotHist, ii= 6, ncol = 1, nrows = 1, name = "Ethnicity_hist", formatt = "pdf")
-grid_plot(adults_sub, plotHist, ii= 22, ncol = 1, nrows = 1, name = "Relationship_hist", formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 6, ncol = 1, nrows = 1, name = "Areaofresidence_hist", formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 7, ncol = 1, nrows = 1, name = "Ethnicity_hist", formatt = "pdf")
+grid_plot(adults_sub, plotHist, ii= 23, ncol = 1, nrows = 1, name = "Relationship_hist", formatt = "pdf")
 # Assault types
 assault_types_hist <- adults_sub %>% select(Assault.type.1:Assault.type.4, LD_diag) %>% gather(key, value, -LD_diag) %>% select(LD_diag, value) %>% filter(!is.na(value)) %>% 
         ggplot(., aes(x=factor(value), fill = factor(LD_diag))) + stat_count() + 
@@ -592,7 +593,7 @@ grid.arrange(textGrob("LDSQ scores", gp=gpar(fontsize=15, fontface=3L)), ldsq_ta
 
 
 
-# 4.4. Temporal frequencies -----------------------------------------------
+# 4.4. Date plots -----------------------------------------------
 Sys.setlocale("LC_ALL","English")
 
 child_dates <- ymd(child_raw$Date.attended)  # children dates
@@ -653,8 +654,54 @@ days_month_all <- ggplot(data = dates_all, aes(x = lubridate::day(Date))) + stat
 ggsave(filename = "days_month_all.tiff", plot = days_month_all, path = "./plots/time", height= 15, width= 20, units="cm", dpi=600, compression = "lzw")
 
 
+days_all_line <- dates_all %>% mutate(Date = as.character(Date)) %>% group_by(Date) %>% summarise(Count = n()) %>% 
+        ggplot(data = ., aes(x = Date, y = Count, group = 1)) + geom_line(color="#FDB462") +
+        theme_fivethirtyeight() +
+        theme(axis.text.x=element_blank()) +
+        scale_y_continuous(breaks = c(1, 3, 5, 7, 9)) +
+        labs(title = "June to November clients per day", subtitle = " Adults and children", caption = "Registered days only")
+ggsave(filename = "days_all_line.tiff", plot = days_all_line, path = "./plots/time", height= 15, width= 25, units="cm", dpi=600, compression = "lzw")
+
+temp_adld <- adults_sub %>% select(Date.attended, LD_diag) %>% arrange(Date.attended) %>% slice(., 1:368)
+temp_adld_p <- ggplot(data = temp_adld, aes(x = Date.attended)) + geom_line(aes(y = ..count..), stat = "bin", binwidth = 1, colour = "#FDB462") +
+        scale_x_date(date_labels = "%b", date_breaks  ="1 month") +
+        theme_fivethirtyeight() +
+        labs(title = "June to November clients per day", subtitle = " Adults")
+
+ggsave(filename = "days_adults_line.tiff", plot = temp_adld_p, path = "./plots/time", height= 15, width= 25, units="cm", dpi=600, compression = "lzw")
 
 
+temp_adld_both_p <- ggplot(data = temp_adld[which(temp_adld$LD_diag == "no"), ], aes(x = Date.attended)) +
+        geom_line(aes(y = ..count..), stat = "bin", binwidth = 1, colour = "#FDB462") +
+        geom_line(data = temp_adld[which(temp_adld$LD_diag == "yes"), ], 
+                  aes(x = Date.attended, y = ..count..), stat = "bin", binwidth = 1, colour = "#80B1D3") +
+        scale_x_date(date_labels = "%b", date_breaks  ="1 month") +
+        theme_fivethirtyeight() +
+        labs(title = "June to November clients per day", subtitle = " Adults", caption = "Orange: Likely to have LD \nBlue: not likely")
+ggsave(filename = "adults_ld_both_line.tiff", plot = temp_adld_both_p, path = "./plots/time", height= 15, width= 25, units="cm", dpi=600, compression = "lzw")
+
+# Adults per day faceted by month
+temp_month_fac <- temp_adld %>% mutate(m = lubridate::month(Date.attended, label = TRUE), d = lubridate::day(Date.attended)) %>% 
+        ggplot(data = ., aes(x = d)) + stat_count(fill = "#FDB462") + 
+                scale_x_continuous(breaks = c(1,31)) +
+                facet_wrap(~m, ncol = 1) +
+                theme_fivethirtyeight() +
+                labs(title = "Clients per day by month", subtitle = " Adults \n LD yes or no")
+        ggsave(filename = "adults_month_facet.tiff", plot = temp_month_fac, path = "./plots/time", height= 25, width= 15, units="cm", dpi=600, compression = "lzw")
+
+# Adults and children faceted by month
+date_all_facet <- tbl_df(dates_all) %>% arrange(desc(Date)) %>% slice(5:n()) %>% arrange(Date) %>% 
+        mutate(m = lubridate::month(Date, label = TRUE), d = lubridate::day(Date)) %>% 
+        
+        ggplot(data = ., aes(x = d)) + stat_count(fill = "#FDB462") + 
+                scale_x_continuous(breaks = c(1,31)) +
+                scale_y_continuous(breaks = c(0, 2, 4, 6, 8)) +
+                facet_wrap(~m, ncol = 1) +
+                theme_fivethirtyeight() +
+                labs(title = "Clients per day by month", subtitle = " Adults and children", caption = "Note: Jun, Sept and Nov had 30 days")
+
+ggsave(filename = "date_all_facet.tiff", plot = date_all_facet, path = "./plots/time", height= 25, width= 15, units="cm", dpi=600, compression = "lzw")
+
+        
 # 4.5. Maps ---------------------------------------------------------------
-
 
