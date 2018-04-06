@@ -1,46 +1,29 @@
-# 5/4/18. To do list:
-# Take a look at wrong dates in Date.attended
-# days_all_line is wrong. Dont use as character with dates
+# To do list:
 # Generate legend for time plots
-# 4. Geocode area of residence
-# 5. Map data
 # Ages (numerical) boxplot
 # LDSQ (numerical) scores boxplot
 # Run a regex to check invalid strings and substitute them for NA
-# change ggsaves to format = "tiff", dpi = 600
-# Or tiff("image.tif", res=800, compression = "lzw", height=5, width=5, units="in")
-
+# change ggsaves to format = "tiff", dpi = 600, compression = "lzw"
 
 # Create folders and download data ----------------------------------------
-
 
 if (!dir.exists("./data")) dir.create("./data")
 if (!dir.exists("./plots")) dir.create("./plots")
 if (!dir.exists("./plots/tables")) dir.create("./plots/tables")
 if (!dir.exists("./plots/time")) dir.create("./plots/time")
+if (!dir.exists("./plots/maps")) dir.create("./plots/maps")
+
 url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/data_raw.xlsx?raw=true"
 download.file(url, destfile = "./data/data_raw.xlsx", mode = "wb")
 
-
-
 # load packages -----------------------------------------------------------
 
-library(xlsx)
-library(tidyverse)
-library(lubridate)
-library(data.table)
-library(devtools)
-library(makeR)
-library(chron)
-library(lattice)
-library(grid)
-library(gridExtra)
-library(ggthemes)
-library(psych)
-library(vcd)
-library(cowplot)
-library(reshape2)
-library(ggmap)
+library(xlsx);library(tidyverse);
+library(lubridate);library(data.table);library(devtools);
+library(makeR);library(chron);library(lattice);
+library(grid);library(gridExtra);library(ggthemes);
+library(psych);library(vcd);library(cowplot);
+library(reshape2);library(ggmap);library(sf); library(classInt); library(viridis)
 
 # 1. Read data -----------------------------------------------------------
 list.files("./data", pattern = ".xlsx")
@@ -238,6 +221,29 @@ child_raw$Client.referred.to.aftercare[child_raw$Client.referred.to.aftercare ==
 unique(child_raw$Chain.of.custody.correct)
 child_raw$Chain.of.custody.correct[child_raw$Chain.of.custody.correct == "not correct"] <- "no"
 unique(child_raw$CAIDSQ..)
+
+# Fix dates
+# Adults
+lubridate::day(adults_raw$Date.attended) %>% unique()
+lubridate::month(adults_raw$Date.attended) %>% unique()
+lubridate::year(adults_raw$Date.attended) %>% unique()  # fix: 2018, 3017, 2917
+lubridate::year(adults_raw$Date.attended)[which(lubridate::year(adults_raw$Date.attended) %in% c(2018, 3017, 2917))] <- 2017
+# Children
+lubridate::day(child_raw$Date.attended) %>% unique()
+lubridate::month(child_raw$Date.attended) %>% unique()
+lubridate::year(child_raw$Date.attended) %>% unique()  # fix: 2018
+lubridate::year(child_raw$Date.attended)[which(lubridate::year(child_raw$Date.attended) == 2018)] <- 2017
+
+# this function seems to work:
+check_dates <- function(dates, days = 1:31, months = 1:12, years = year(today())) {
+        require(lubridate)
+        for (i in 1:length(dates)) {
+        if (!lubridate::day(dates[i]) %in% days) stop("Check unique(lubridate::day(dates))")
+        if (!lubridate::month(dates[i]) %in% months) stop("Check unique(lubridate::month(dates))")
+        if (!lubridate::year(dates[i]) %in% years) stop("Check unique(lubridate::year(dates))")
+        }
+        return("No trace of time travellers")
+}
 
 # NAs plot
 plotNa <- function(dataFrame, title = NULL) {
@@ -654,12 +660,12 @@ days_month_all <- ggplot(data = dates_all, aes(x = lubridate::day(Date))) + stat
 ggsave(filename = "days_month_all.tiff", plot = days_month_all, path = "./plots/time", height= 15, width= 20, units="cm", dpi=600, compression = "lzw")
 
 
-days_all_line <- dates_all %>% mutate(Date = as.character(Date)) %>% group_by(Date) %>% summarise(Count = n()) %>% 
-        ggplot(data = ., aes(x = Date, y = Count, group = 1)) + geom_line(color="#FDB462") +
-        theme_fivethirtyeight() +
-        theme(axis.text.x=element_blank()) +
-        scale_y_continuous(breaks = c(1, 3, 5, 7, 9)) +
-        labs(title = "June to November clients per day", subtitle = " Adults and children", caption = "Registered days only")
+days_all_line <- dates_all %>% arrange(Date) %>%
+        ggplot(data = ., aes(x = Date)) + geom_line(aes(y = ..count..), stat = "bin", binwidth = 1, color="#FDB462") +
+                theme_fivethirtyeight() +
+                scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+                scale_y_continuous(breaks = c(0, 2, 4, 6, 8)) +
+                labs(title = "June to November clients per day", subtitle = " Adults and children")
 ggsave(filename = "days_all_line.tiff", plot = days_all_line, path = "./plots/time", height= 15, width= 25, units="cm", dpi=600, compression = "lzw")
 
 temp_adld <- adults_sub %>% select(Date.attended, LD_diag) %>% arrange(Date.attended) %>% slice(., 1:368)
@@ -704,4 +710,127 @@ ggsave(filename = "date_all_facet.tiff", plot = date_all_facet, path = "./plots/
 
         
 # 4.5. Maps ---------------------------------------------------------------
+# Methodology from https://medium.com/@traffordDataLab/lets-make-a-map-in-r-7bd1d9366098
+# Download geojson of the boroughs of Greater Manchester
+gb_bound <- st_read("https://opendata.arcgis.com/datasets/0b09996863af4b5db78058225bac5d1b_2.geojson", quiet = TRUE, stringsAsFactors = FALSE)
+gm_bound <- gb_bound %>% filter(ctyua15nm %in% c("Bolton","Bury","Manchester","Oldham","Rochdale","Salford","Stockport","Tameside","Trafford","Wigan"))
+plot(st_geometry(gm_bound))
+gm_bound <- gm_bound %>% select(area_code = ctyua15cd, area_name = ctyua15nm)
 
+# Rename areas of residence, filter to GM boroughs and add geographic code
+areas_adult <- tibble(area_name = adults_sub$Area.of.residence, LD_diag = adults_sub$LD_diag)
+areas_adult$area_name[which(areas_adult$area_name == "gm-stockport")] <- "Stockport"
+areas_adult$area_name[which(areas_adult$area_name == "gm-salford")] <- "Salford"
+areas_adult$area_name[which(areas_adult$area_name == "gm-rochdale")] <- "Rochdale"
+areas_adult$area_name[which(areas_adult$area_name == "gm-bolton")] <- "Bolton"
+areas_adult$area_name[which(areas_adult$area_name == "gm-manchester")] <- "Manchester"
+areas_adult$area_name[which(areas_adult$area_name == "gm-oldham")] <- "Oldham"
+areas_adult$area_name[which(areas_adult$area_name == "gm-trafford")] <- "Trafford"
+areas_adult$area_name[which(areas_adult$area_name == "gm-bury")] <- "Bury"
+areas_adult$area_name[which(areas_adult$area_name == "gm-wigan")] <- "Wigan"
+areas_adult$area_name[which(areas_adult$area_name == "gm-tameside")] <- "Tameside"
+
+areas_adult <- areas_adult %>% 
+        filter(area_name %in% c("Bolton","Bury","Manchester","Oldham", "Rochdale","Salford","Stockport","Tameside","Trafford","Wigan")) %>% 
+        mutate(area_code = "code")
+
+areas_adult$area_code[which(areas_adult$area_name == "Bolton")] <- "E08000001"              
+areas_adult$area_code[which(areas_adult$area_name == "Bury")] <- "E08000002"  
+areas_adult$area_code[which(areas_adult$area_name == "Manchester")] <- "E08000003"  
+areas_adult$area_code[which(areas_adult$area_name == "Oldham")] <- "E08000004"  
+areas_adult$area_code[which(areas_adult$area_name == "Rochdale")] <- "E08000005"  
+areas_adult$area_code[which(areas_adult$area_name == "Stockport")] <- "E08000007"  
+areas_adult$area_code[which(areas_adult$area_name == "Tameside")] <- "E08000008"  
+areas_adult$area_code[which(areas_adult$area_name == "Trafford")] <- "E08000009"  
+areas_adult$area_code[which(areas_adult$area_name == "Wigan")] <- "E08000010"  
+areas_adult$area_code[which(areas_adult$area_name == "Salford")] <- "E08000006"  
+        
+# Join gm_bound and areas_adult
+sf_gm_adult <- left_join(gm_bound, areas_adult[, 3], by = "area_code")  # change to areas_adult[which(areas_adult$LD_diag == "yes"), 2:3]
+
+# Prepare DF for map
+gm_bound <- gm_bound %>% arrange(area_code)  # area_codes must be ordered in the same manner in both DFs for the left_join
+sf_gm_adult <- sf_gm_adult %>% arrange(area_code) %>% group_by(area_code) %>% summarise(Count = n()) %>% select(Count) %>% 
+        bind_cols(gm_bound, .)
+
+# Map of GM borough. Adults with and without LD
+gm_map_ad <- ggplot() +
+                geom_sf(data = sf_gm_adult, aes(fill = as.factor(Count)),
+                        alpha = 0.8,
+                        colour = "grey",                
+                        size = 0.3) +
+                scale_fill_brewer(labels = c(as.character(min(sf_gm_adult$Count)), "", "", "","","","","", as.character(max(sf_gm_adult$Count))),
+                                  palette = "Oranges",
+                                  name = "N clients") +
+                labs(x = NULL, y = NULL,                                                          
+                     title = "Number of clients per Borough of GM",      
+                     subtitle = "Adults",                             
+                     caption = "Areas excluded: Cheshire, Merseyside \nNote: Not normalized to borough population") +  
+                theme_fivethirtyeight() +
+                theme(legend.position = "right",
+                     legend.direction = "vertical",
+                     panel.background = element_blank(),                                       
+                     line = element_blank(),                                                     
+                     axis.text = element_blank(),                                                
+                     axis.title = element_blank()) +
+                coord_sf(datum = NA)
+ggsave(filename = "gm_map_ad.tiff", plot = gm_map_ad, path = "./plots/maps", height= 19, width= 22, units="cm", dpi=600, compression = "lzw")
+
+# Map of GM borough. Adults and children
+areas_all <- tibble(area_name = c(adults_sub$Area.of.residence, child_raw$Area.of.residence))  # select area from child and adult data sets
+
+areas_all$area_name[which(areas_all$area_name == "gm-stockport")] <- "Stockport"
+areas_all$area_name[which(areas_all$area_name == "gm-salford")] <- "Salford"
+areas_all$area_name[which(areas_all$area_name == "gm-rochdale")] <- "Rochdale"
+areas_all$area_name[which(areas_all$area_name == "gm-bolton")] <- "Bolton"
+areas_all$area_name[which(areas_all$area_name == "gm-manchester")] <- "Manchester"
+areas_all$area_name[which(areas_all$area_name == "gm-oldham")] <- "Oldham"
+areas_all$area_name[which(areas_all$area_name == "gm-trafford")] <- "Trafford"
+areas_all$area_name[which(areas_all$area_name == "gm-bury")] <- "Bury"
+areas_all$area_name[which(areas_all$area_name == "gm-wigan")] <- "Wigan"
+areas_all$area_name[which(areas_all$area_name == "gm-tameside")] <- "Tameside"
+
+areas_all <- areas_all %>% 
+        filter(area_name %in% c("Bolton","Bury","Manchester","Oldham", "Rochdale","Salford","Stockport","Tameside","Trafford","Wigan")) %>% 
+        mutate(area_code = "code")  
+
+areas_all$area_code[which(areas_all$area_name == "Bolton")] <- "E08000001"              
+areas_all$area_code[which(areas_all$area_name == "Bury")] <- "E08000002"  
+areas_all$area_code[which(areas_all$area_name == "Manchester")] <- "E08000003"  
+areas_all$area_code[which(areas_all$area_name == "Oldham")] <- "E08000004"  
+areas_all$area_code[which(areas_all$area_name == "Rochdale")] <- "E08000005"  
+areas_all$area_code[which(areas_all$area_name == "Stockport")] <- "E08000007"  
+areas_all$area_code[which(areas_all$area_name == "Tameside")] <- "E08000008"  
+areas_all$area_code[which(areas_all$area_name == "Trafford")] <- "E08000009"  
+areas_all$area_code[which(areas_all$area_name == "Wigan")] <- "E08000010"  
+areas_all$area_code[which(areas_all$area_name == "Salford")] <- "E08000006"  # This step can be skipped, but it's desirable
+
+sf_gm_all <- inner_join(areas_all[, 2], gm_bound, by = "area_code")  # join gm_bound and areas_adult
+
+sf_gm_all <- sf_gm_all %>% arrange(area_code) %>% group_by(area_code) %>% summarise(Count = n()) %>% select(Count) %>%  # Prepare DF for map
+        bind_cols(gm_bound, .)
+
+gm_map_all <- ggplot() +
+                geom_sf(data = sf_gm_all, aes(fill = as.factor(Count)),
+                        alpha = 0.8,
+                        colour = "grey",                
+                        size = 0.3) +
+                scale_fill_brewer(labels = c(as.character(min(sf_gm_all$Count)), "", "", "","","","","", as.character(max(sf_gm_all$Count))),
+                                  palette = "Oranges",
+                                  name = "N clients") +
+                labs(x = NULL, y = NULL,                                                          
+                     title = "Number of clients per Borough of GM",      
+                     subtitle = "Adults and children",                             
+                     caption = "Note: Not normalized to population") +  
+                theme_fivethirtyeight() +
+                theme(legend.position = "right",
+                      legend.direction = "vertical",
+                      panel.background = element_blank(),                                       
+                      line = element_blank(),                                                     
+                      axis.text = element_blank(),                                                
+                      axis.title = element_blank()) +
+                coord_sf(datum = NA)
+ggsave(filename = "gm_map_all.tiff", plot = gm_map_all, path = "./plots/maps", height= 17, width= 20, units="cm", dpi=600, compression = "lzw")
+
+
+      
