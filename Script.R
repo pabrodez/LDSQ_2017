@@ -13,8 +13,8 @@ if (!dir.exists("./plots/tables")) dir.create("./plots/tables")
 if (!dir.exists("./plots/time")) dir.create("./plots/time")
 if (!dir.exists("./plots/maps")) dir.create("./plots/maps")
 
-url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/data_raw.xlsx?raw=true"
-download.file(url, destfile = "./data/data_raw.xlsx", mode = "wb")
+url <- "https://github.com/pabrodez/LDSQ_2017/blob/master/data/data.xlsx?raw=true"
+download.file(url, destfile = "./data/data.xlsx", mode = "wb")
 
 # load packages -----------------------------------------------------------
 
@@ -27,9 +27,9 @@ library(reshape2);library(ggmap);library(sf); library(classInt); library(viridis
 
 # 1. Read data -----------------------------------------------------------
 list.files("./data", pattern = ".xlsx")
-adults_raw <-  read.xlsx("./data/data_raw.xlsx", sheetIndex = 1, startRow = 2, header = TRUE, 
+adults_raw <-  read.xlsx("./data/data.xlsx", sheetIndex = 1, startRow = 2, header = TRUE, 
                          colClasses = rep("character", 50), stringsAsFactors = FALSE)
-child_raw <- read.xlsx("./data/data_raw.xlsx", sheetIndex = 2, startRow = 2, header = TRUE, 
+child_raw <- read.xlsx("./data/data.xlsx", sheetIndex = 2, startRow = 2, header = TRUE, 
                        colClasses = rep("character",53), stringsAsFactors = FALSE)
 
 # lower case
@@ -40,10 +40,12 @@ child_raw[] <- lapply(child_raw, tolower)
 adults_raw[adults_raw == ""] <- NA
 adults_raw[adults_raw == "n/a"] <- NA
 adults_raw[adults_raw == "na"] <- NA
+adults_raw[adults_raw == "not known/not recorded"] <- NA
 
 child_raw[child_raw == ""] <- NA
 child_raw[child_raw == "n/a"] <- NA
 child_raw[child_raw == "na"] <- NA
+child_raw[child_raw == "not known/not recorded"] <- NA
 
 # Remove rows with empty values in all columns
 rem_row <- function(x) {
@@ -60,12 +62,12 @@ adults_raw <- rem_col(adults_raw)
 child_raw <- rem_col(child_raw)
         
 # Set class of columns
-adults_dates <- read.xlsx("./data/data_raw.xlsx", sheetIndex = 1, colIndex = 2, startRow = 2, header = TRUE, colClasses = "Date")
+adults_dates <- read.xlsx("./data/data.xlsx", sheetIndex = 1, colIndex = 3, startRow = 2, header = TRUE, colClasses = "Date")
 adults_dates <- data.frame(rem_col(adults_dates))
 adults_dates <- data.frame(rem_row(adults_dates))
 adults_raw$Date.attended <- adults_dates[, 1]
 
-childs_dates <- read.xlsx("./data/data_raw.xlsx", sheetIndex = 2, colIndex = 2, startRow = 2, header = TRUE, colClasses = "Date")
+childs_dates <- read.xlsx("./data/data.xlsx", sheetIndex = 2, colIndex = 3, startRow = 2, header = TRUE, colClasses = "Date")
 childs_dates <- data.frame(rem_col(childs_dates))
 childs_dates <- data.frame(rem_row(childs_dates))
 child_raw$Date.attended <- childs_dates[, 1]
@@ -78,9 +80,6 @@ child_raw$Age <- as.numeric(child_raw$Age)
 child_raw$CAIDSQ.. <- as.numeric(child_raw$CAIDSQ..)
 
 
-
-
-
 # 2. Check unique values and make corrections--------------------------------------------------
 # Adults
 unique(adults_raw$Referrer)
@@ -88,15 +87,23 @@ adults_raw$Referrer[adults_raw$Referrer == "police" | adults_raw$Referrer == "so
 adults_raw$Referrer[adults_raw$Referrer == "NA"] <- NA
 unique(adults_raw$Pathway)
 unique(adults_raw$Gender)
+adults_raw$Gender[adults_raw$Gender == "woman"] <- "female"
+adults_raw$Gender[adults_raw$Gender == "man"] <- "male"
 unique(adults_raw$Area.of.residence)
 adults_raw$Area.of.residence[adults_raw$Area.of.residence == "no fixed abode"] <- "no fixed above"
 adults_raw$Area.of.residence[adults_raw$Area.of.residence == "gm salford"] <- "gm-salford"
+adults_raw$Area.of.residence[adults_raw$Area.of.residence == "heterosexual"] <- NA
 unique(adults_raw$Ethnicity)
 adults_raw$Ethnicity[adults_raw$Ethnicity == "not known"] <- NA
 adults_raw$Ethnicity[adults_raw$Ethnicity == "not given"] <- NA
 unique(adults_raw$Religion)
 unique(adults_raw$Uni..Student)
 adults_raw$Uni..Student[adults_raw$Uni..Student == "unknown"] <- NA
+adults_raw$Uni..Student[adults_raw$Uni..Student == "unemployed"] <- "no"
+adults_raw$Uni..Student[adults_raw$Uni..Student == "f/t employed"] <- "no"
+adults_raw$Uni..Student[adults_raw$Uni..Student == "p/t employed"] <- "no"
+adults_raw$Uni..Student[adults_raw$Uni..Student == "university"] <- "yes"
+adults_raw$Uni..Student[adults_raw$Uni..Student == "college/6th form"] <- "no"
 unique(adults_raw$Physical.disability)
 adults_raw$Physical.disability[adults_raw$Physical.disability == "yes, details in comments"] <- "yes"
 adults_raw$Physical.disability[adults_raw$Physical.disability == "unknown"] <- NA
@@ -105,7 +112,9 @@ adults_raw$Learning.disability[adults_raw$Learning.disability == "unknown"] <- N
 unique(adults_raw$Mental.health)
 adults_raw$Mental.health[adults_raw$Mental.health == "unknown"] <- NA
 unique(adults_raw$Interpreter.used)
-adults_raw$Interpreter.used[adults_raw$Interpreter.used == "english speaking"] <- "yes" 
+adults_raw$Interpreter.used[adults_raw$Interpreter.used == "english speaking"] <- "no" 
+adults_raw$Interpreter.used[adults_raw$Interpreter.used == "yes-needed + present"] <- "yes" 
+adults_raw$Interpreter.used[adults_raw$Interpreter.used == "no-needed + not present"] <- "no" 
 unique(adults_raw$DV.history)
 adults_raw$DV.history[adults_raw$DV.history == "unknown"] <- NA
 unique(adults_raw$If.yes..DASH.done)
@@ -117,11 +126,15 @@ unique(adults_raw$Time.since.assault)
 unique(adults_raw$Assault.type.1)
 adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "unknown"] <- NA
 adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "digital vaginal"] <- "digital penetration"
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "not disclosed"] <- NA
 unique(adults_raw$Assault.type.2)
 adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "unknown"] <- NA
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "not disclosed"] <- NA
 unique(adults_raw$Assault.type.3)
 adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "unknown"] <- NA
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "not disclosed"] <- NA
 unique(adults_raw$Assault.type.4)
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "not disclosed"] <- NA
 unique(adults_raw$Strangulation)
 adults_raw$Strangulation[adults_raw$Strangulation == "notrecorded in notes"] <- NA
 unique(adults_raw$No..of.perps.)
@@ -139,8 +152,14 @@ unique(adults_raw$Hep.B)
 adults_raw$Hep.B[adults_raw$Hep.B == "not documented"] <- NA
 unique(adults_raw$Self.harm)
 adults_raw$Self.harm[adults_raw$Self.harm == "not recorded"] <- NA
+adults_raw$Self.harm[adults_raw$Self.harm == "yes - unclear"] <- "yes"
+adults_raw$Self.harm[adults_raw$Self.harm == "not recent"] <- "yes"
+adults_raw$Self.harm[adults_raw$Self.harm == "recent/current"] <- "yes"
 unique(adults_raw$Substance.misuse)
 adults_raw$Substance.misuse[adults_raw$Substance.misuse == "not recorded"] <- NA
+adults_raw$Substance.misuse[adults_raw$Substance.misuse == "yes - unclear"] <- "yes"
+adults_raw$Substance.misuse[adults_raw$Substance.misuse == "not recent"] <- "yes"
+adults_raw$Substance.misuse[adults_raw$Substance.misuse == "recent/current"] <- "yes"
 unique(adults_raw$Sex.Worker)
 adults_raw$Sex.Worker[adults_raw$Sex.Worker == "unknown"] <- NA
 unique(adults_raw$Client.referred.to.aftercare)
@@ -153,6 +172,8 @@ unique(child_raw$Referrer)
 child_raw$Referrer[child_raw$Referrer == "police" | child_raw$Referrer == "social services"] <- "police/social services"
 unique(child_raw$Pathway)
 unique(child_raw$Gender)
+child_raw$Gender[child_raw$Gender == "woman"] <- "female"
+child_raw$Gender[child_raw$Gender == "man"] <- "male"
 unique(child_raw$Area.of.residence)
 child_raw$Area.of.residence[child_raw$Area.of.residence == "gm - manchester"] <- "gm-manchester"
 unique(child_raw$Ethnicity)
@@ -167,7 +188,8 @@ child_raw$Learning.disability[child_raw$Learning.disability == "unknown"] <- NA
 unique(child_raw$Mental.health)
 child_raw$Mental.health[child_raw$Mental.health == "unknown"] <- NA
 unique(child_raw$Interpreter.used)
-child_raw$Interpreter.used[child_raw$Interpreter.used == "english speaking"] <- "yes" 
+child_raw$Interpreter.used[child_raw$Interpreter.used == "english speaking"] <- "no" 
+child_raw$Interpreter.used[child_raw$Interpreter.used == "yes-needed + present"] <- "yes" 
 unique(child_raw$DV.history)
 child_raw$DV.history[child_raw$DV.history == "unknown"] <- NA
 child_raw$NA..2 <- NULL
@@ -185,6 +207,7 @@ unique(child_raw$Assault.type.2)
 child_raw$Assault.type.2[child_raw$Assault.type.2 == "unknown"] <- NA
 child_raw$Assault.type.2[child_raw$Assault.type.2 == "digital"] <- "digital penetration"
 unique(child_raw$Assault.type.3)
+child_raw$Assault.type.3[child_raw$Assault.type.3 == "unknown"] <- NA
 unique(child_raw$Assault.type.4)
 unique(child_raw$Strangulation)
 child_raw$Strangulation[child_raw$Strangulation == "notrecorded in notes"] <- NA
@@ -197,12 +220,14 @@ child_raw$Relationship.to.alleged.perp.[child_raw$Relationship.to.alleged.perp. 
 unique(child_raw$Met.on.internet)
 unique(child_raw$Emergency.contraception)
 child_raw$Emergency.contraception[child_raw$Emergency.contraception == "already had"] <- "not required"
+child_raw$Emergency.contraception[child_raw$Emergency.contraception == "not documented"] <- NA
 unique(child_raw$HIV.PEP)
 child_raw$HIV.PEP[child_raw$HIV.PEP == "not documented"] <- NA
 unique(child_raw$Hep.B)
 child_raw$Hep.B[child_raw$Hep.B == "not documented"] <- NA
-unique(child_raw$U.16.DVD)
-child_raw$U.16.DVD[child_raw$U.16.DVD == "dvd"] <- "yes"
+child_raw$Hep.B[child_raw$Hep.B == "not"] <- "not appropriate"
+unique(child_raw$Under.16.Recording)
+child_raw$Under.16.Recording[child_raw$Under.16.Recording == "dvd"] <- "yes"
 unique(child_raw$STI.screening.status)
 unique(child_raw$Tested.for.HIV)
 unique(child_raw$Tested.for.HepB)
@@ -210,12 +235,22 @@ unique(child_raw$Tested.for.HepC)
 unique(child_raw$Self.harm)
 child_raw$Self.harm[child_raw$Self.harm == "recent"] <- "recent/current"
 child_raw$Self.harm[child_raw$Self.harm == "not recorded"] <- NA
+child_raw$Self.harm[child_raw$Self.harm == "yes - unclear"] <- "yes"
+child_raw$Self.harm[child_raw$Self.harm == "recent/current"] <- "yes"
+child_raw$Self.harm[child_raw$Self.harm == "not recent"] <- "yes"
+unique(child_raw$Child.affected.by.DV)
+child_raw$Child.affected.by.DV[child_raw$Child.affected.by.DV == "unknown"] <- NA
 unique(child_raw$Substance.misuse)
 child_raw$Substance.misuse[child_raw$Substance.misuse == "not recorded"] <- NA
+child_raw$Substance.misuse[child_raw$Substance.misuse == "recent"] <- "recent/current"
+child_raw$Substance.misuse[child_raw$Substance.misuse == "not recorded"] <- NA
+child_raw$Substance.misuse[child_raw$Substance.misuse == "yes - unclear"] <- "yes"
+child_raw$Substance.misuse[child_raw$Substance.misuse == "recent/current"] <- "yes"
+child_raw$Substance.misuse[child_raw$Substance.misuse == "not recent"] <- "yes"
 unique(child_raw$Child.safeguarding.referral)
 unique(child_raw$FGM)
-unique(child_raw$CSE.CSE.risk)
-child_raw$CSE.CSE.risk[child_raw$CSE.CSE.risk == "unknown"] <- NA
+unique(child_raw$CSE.Risk.of.CSE)
+child_raw$CSE.Risk.of.CSE[child_raw$CSE.Risk.of.CSE == "unknown"] <- NA
 unique(child_raw$Client.referred.to.aftercare)
 child_raw$Client.referred.to.aftercare[child_raw$Client.referred.to.aftercare == "rasa"] <- "rasasc"
 unique(child_raw$Chain.of.custody.correct)
@@ -226,13 +261,12 @@ unique(child_raw$CAIDSQ..)
 # Adults
 lubridate::day(adults_raw$Date.attended) %>% unique()
 lubridate::month(adults_raw$Date.attended) %>% unique()
-lubridate::year(adults_raw$Date.attended) %>% unique()  # fix: 2018, 3017, 2917
-lubridate::year(adults_raw$Date.attended)[which(lubridate::year(adults_raw$Date.attended) %in% c(2018, 3017, 2917))] <- 2017
+lubridate::year(adults_raw$Date.attended) %>% unique()  # fix: 3017, 2917
+lubridate::year(adults_raw$Date.attended)[which(lubridate::year(adults_raw$Date.attended) %in% c(3017, 2917))] <- 2017
 # Children
 lubridate::day(child_raw$Date.attended) %>% unique()
 lubridate::month(child_raw$Date.attended) %>% unique()
-lubridate::year(child_raw$Date.attended) %>% unique()  # fix: 2018
-lubridate::year(child_raw$Date.attended)[which(lubridate::year(child_raw$Date.attended) == 2018)] <- 2017
+lubridate::year(child_raw$Date.attended) %>% unique() 
 
 # this function seems to work:
 check_dates <- function(dates, days = 1:31, months = 1:12, years = year(today())) {
@@ -244,9 +278,11 @@ check_dates <- function(dates, days = 1:31, months = 1:12, years = year(today())
         }
         return("No trace of time travellers")
 }
+check_dates(adults_raw$Date.attended, months = c(6:12, 1, 2, 3), years = 2017:2018)
+check_dates(child_raw$Date.attended, months = c(6:12, 1, 2, 3), years = 2017:2018)
 
 # NAs plot
-plotNa <- function(dataFrame, title = NULL) {
+plotNa <- function(dataFrame) {
         tempDf <- as.data.frame(ifelse(is.na(dataFrame), 0, 1))
         tempDf <- tempDf[, order(colSums(tempDf))]
         tempData <- expand.grid(list(x = 1:nrow(tempDf), y = colnames(tempDf)))
@@ -254,11 +290,11 @@ plotNa <- function(dataFrame, title = NULL) {
         tempData <- data.frame(x = unlist(tempData$x), y = unlist(tempData$y), v = unlist(tempData$v))
         ggplot(tempData) + geom_tile(aes(x=x, y=y, fill=factor(v))) +
                 scale_fill_manual(values=c("white", "black"), name="Missing value\n1=No, 0=Yes") +
-                theme_light() + ylab("") + xlab("Rows of data set") + ggtitle(title)
+                theme_light() + ylab("") + xlab("Rows of data set") + ggtitle("")
         
 }
 
-adults_nas<- plotNa(adults_raw)
+adults_nas <- plotNa(adults_raw)
 child_nas <- plotNa(child_raw)
 ggsave(filename = "adults_nas.pdf", path = "./plots", plot = adults_nas, device = "pdf", units = "cm", height = 25, width = 20)
 ggsave(filename = "child_nas.pdf", path = "./plots", plot = child_nas, device = "pdf", units = "cm", height = 25, width = 20)
@@ -266,18 +302,61 @@ ggsave(filename = "child_nas.pdf", path = "./plots", plot = child_nas, device = 
 # 3. Group variables and create new ones------------------------------------------------------
 # ldsq yes/no
 adults_raw <- mutate(adults_raw, LD_diag = ifelse(LDSQ.. < 46, "yes", "no"))
+child_raw <- mutate(child_raw, LD_diag = ifelse(CAIDSQ.. < 46, "yes", "no"))
 
-# dates_all %>% mutate(month = month(Date)) %>% 
-#         group_by(month) %>% summarise(month_count = n()) %>% 
-#         ggplot(.) + aes(x = month, y = month_count) + geom_line()
-# 1st look
+# relationship to perp
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "son"] <- "1st degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "father"] <- "1st degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "brother"] <- "1st degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "brother-in-law"] <- "2nd degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "male cousin"] <- "2nd degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "uncle"] <- "2nd degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "step father"] <- "2nd degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "grandfather"] <- "2nd degree relative"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "carer"] <- "authority figure"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "lodger/flatmate"] <- NA
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "family friend"] <- "friend"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "school peer"] <- "friend"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "taxi driver"] <- "stranger"
+adults_raw$Relationship.to.alleged.perp.[adults_raw$Relationship.to.alleged.perp. == "partner" | adults_raw$Relationship.to.alleged.perp. == "ex partner"] <- "partner and ex"
 
+# DV history
+adults_raw$DV.history[adults_raw$DV.history == "none"] <- "no"
+
+# self-harm
+unique(adults_raw$Self.harm)
+# subtance misuse
+unique(adults_raw$Substance.misuse)
+# assault type
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "non penetrative assault"] <- "non-penetrative assault"
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "forced to perform a sexual act"] <- "non-penetrative assault"
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "object penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "digital penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.1[adults_raw$Assault.type.1 == "historic abuse"] <- NA
+
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "non penetrative assault"] <- "non-penetrative assault"
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "forced to perform a sexual act"] <- "non-penetrative assault"
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "object penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "digital penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.2[adults_raw$Assault.type.2 == "historic abuse"] <- NA
+
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "non penetrative assault"] <- "non-penetrative assault"
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "forced to perform a sexual act"] <- "non-penetrative assault"
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "object penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "digital penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.3[adults_raw$Assault.type.3 == "historic abuse"] <- NA
+
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "non penetrative assault"] <- "non-penetrative assault"
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "forced to perform a sexual act"] <- "non-penetrative assault"
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "object penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "digital penetration"] <- "non-penile penetration"
+adults_raw$Assault.type.4[adults_raw$Assault.type.4 == "historic abuse"] <- NA
 
 
 # 4. Descriptive stats ----------------------------------------------------
 # Subset DF to keep variables of interest
 adults_sub <- adults_raw[, -c(15, 16, 17, 18, 19, 20, 21, 22, 33,34, 35, 38, 39, 40, 42, 43, 44)]
-adults_sub <- adults_sub[-which(adults_sub$Age < 18),]
+adults_sub <- adults_raw[-which(adults_raw$Age < 18),]
 # Group Age var
 adults_sub$Age[adults_sub$Age >= 18 & adults_sub$Age <= 25] <- "18-25"
 adults_sub$Age[adults_sub$Age > 25 & adults_sub$Age <= 35] <- "26-35"
@@ -378,7 +457,7 @@ grid_plot(adults_sub, plotHist, ii= 6, ncol = 1, nrows = 1, name = "Areaofreside
 grid_plot(adults_sub, plotHist, ii= 7, ncol = 1, nrows = 1, name = "Ethnicity_hist", formatt = "pdf")
 grid_plot(adults_sub, plotHist, ii= 23, ncol = 1, nrows = 1, name = "Relationship_hist", formatt = "pdf")
 # Assault types
-assault_types_hist <- adults_sub %>% select(Assault.type.1:Assault.type.4, LD_diag) %>% gather(key, value, -LD_diag) %>% select(LD_diag, value) %>% filter(!is.na(value)) %>% 
+assault_types_hist <- adults_raw %>% select(Assault.type.1:Assault.type.4, LD_diag) %>% gather(key, value, -LD_diag) %>% select(LD_diag, value) %>% na.omit() %>% 
         ggplot(., aes(x=factor(value), fill = factor(LD_diag))) + stat_count() + 
                 theme_fivethirtyeight() + 
                 theme(axis.text.x = element_text(angle = 70, hjust = 1), legend.position = "top") + 
@@ -744,28 +823,34 @@ areas_adult$area_code[which(areas_adult$area_name == "Tameside")] <- "E08000008"
 areas_adult$area_code[which(areas_adult$area_name == "Trafford")] <- "E08000009"  
 areas_adult$area_code[which(areas_adult$area_name == "Wigan")] <- "E08000010"  
 areas_adult$area_code[which(areas_adult$area_name == "Salford")] <- "E08000006"  
+
+# population estimates
+population <- c(283115, 188669, 541263, 232724, 216165, 248726, 290557, 223189, 234673, 323060)
         
 # Join gm_bound and areas_adult
 sf_gm_adult <- left_join(gm_bound, areas_adult[, 3], by = "area_code")  # change to areas_adult[which(areas_adult$LD_diag == "yes"), 2:3]
 
 # Prepare DF for map
 gm_bound <- gm_bound %>% arrange(area_code)  # area_codes must be ordered in the same manner in both DFs for the left_join
-sf_gm_adult <- sf_gm_adult %>% arrange(area_code) %>% group_by(area_code) %>% summarise(Count = n()) %>% select(Count) %>% 
+sf_gm_adult <- sf_gm_adult %>% arrange(area_code) %>% group_by(area_code) %>% summarise(Count = n()) %>% mutate(Prevalence = round((Count/population)*100, digits = 3)) %>%
+        mutate(lon=map_dbl(geometry, ~st_centroid(.x)[[1]]), 
+               lat=map_dbl(geometry, ~st_centroid(.x)[[2]])) %>% 
         bind_cols(gm_bound, .)
 
 # Map of GM borough. Adults with and without LD
-gm_map_ad <- ggplot() +
-                geom_sf(data = sf_gm_adult, aes(fill = as.factor(Count)),
+gm_ad_prev <- ggplot(data = na.omit(sf_gm_adult)) +
+                geom_sf(aes(fill = as.factor(Prevalence)),
                         alpha = 0.8,
                         colour = "grey",                
                         size = 0.3) +
-                scale_fill_brewer(labels = c(as.character(min(sf_gm_adult$Count)), "", "", "","","","","", as.character(max(sf_gm_adult$Count))),
+                scale_fill_brewer(labels = c(as.character(min(sf_gm_adult$Prevalence)), "", "", "","","","",as.character(max(sf_gm_adult$Prevalence))),
                                   palette = "Oranges",
-                                  name = "N clients") +
+                                  name = "Prevalence in %") +
+                geom_text(aes(x = lon, y = lat, label = area_name), size = 3) +
                 labs(x = NULL, y = NULL,                                                          
-                     title = "Number of clients per Borough of GM",      
-                     subtitle = "Adults",                             
-                     caption = "Areas excluded: Cheshire, Merseyside \nNote: Not normalized to borough population") +  
+                     title = "Prevalence per borough of GM",      
+                     subtitle = "Adults with and without LD",                             
+                     caption = "Areas excluded: Cheshire, Merseyside") +  
                 theme_fivethirtyeight() +
                 theme(legend.position = "right",
                      legend.direction = "vertical",
@@ -774,7 +859,7 @@ gm_map_ad <- ggplot() +
                      axis.text = element_blank(),                                                
                      axis.title = element_blank()) +
                 coord_sf(datum = NA)
-ggsave(filename = "gm_map_ad.tiff", plot = gm_map_ad, path = "./plots/maps", height= 19, width= 22, units="cm", dpi=600, compression = "lzw")
+ggsave(filename = "gm_ad_prev.tiff", plot = gm_ad_prev, path = "./plots/maps", height= 19, width= 22, units="cm", dpi=600, compression = "lzw")
 
 # Map of GM borough. Adults and children
 areas_all <- tibble(area_name = c(adults_sub$Area.of.residence, child_raw$Area.of.residence))  # select area from child and adult data sets
